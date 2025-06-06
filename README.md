@@ -1,4 +1,2 @@
 # clustering
-Research and benchmarking of clustering algorithms
-
-test
+Research, benchmarking and optimising clustering algorithms for GPU integration

@@ -297,7 +297,7 @@ def my_hdbscan(data_pts, min_samples, min_cluster_size):
     
     return all_labelled_points
 
-from "scikit-learn" import HDBSCAN
+from sklearn.cluster import HDBSCAN  
 
 if __name__ == "__main__":
     # Generate different types of synthetic datasets and test clustering
@@ -311,7 +311,8 @@ if __name__ == "__main__":
     
     # Test on different datasets
     # for data_type in ['blobs']:
-    for data_type in ['blobs', 'circles', 'moons', 'anisotropic']:
+    # for data_type in ['blobs', 'circles', 'moons', 'anisotropic']:
+    for data_type in ['anisotropic']:
         print(f"\nTesting on {data_type} dataset...")
         
         # Generate data
