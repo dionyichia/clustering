@@ -1,2 +1,0 @@
-Dataset,Custom Time (s),Sklearn Time (s),Time Ratio,Custom Memory (MB),Sklearn Memory (MB),Memory Ratio
-anisotropic,921.8439292907715,0.0071620941162109375,7.769313100235042e-06,64.6015625,0.39453125,0.0061071471762002665

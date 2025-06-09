@@ -1,6 +1,6 @@
 import heapq
 from math import inf  
-from hdbscan_plot import *
+from my_hdbscan.hdbscan_plot import *
 
 def euclid_dist(pointA, pointB):
     """Calculate Euclidean distance between two points"""

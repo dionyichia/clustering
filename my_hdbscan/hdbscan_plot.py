@@ -333,3 +333,66 @@ def plot_clusters_comparsion(X, labels_custom, labels_sklearn=None, title='Clust
     plt.suptitle(title, fontsize=16)
     plt.tight_layout()
     return fig
+
+def plot_all_comparisons(results_list):
+    """
+    Plot clustering comparisons for multiple datasets side by side for
+    Custom, Sklearn, and New HDBSCAN implementations.
+    
+    Parameters:
+    -----------
+    results_list : list of dicts
+        Each dict must contain keys: 'X', 'custom_labels', 'sklearn_labels', 'new_labels', 'title'
+    """
+    n = len(results_list)
+    fig, axes = plt.subplots(nrows=n, ncols=3, figsize=(18, 5 * n))
+    
+    # Handle the case where n=1 (axes is 1D) vs n>1 (axes is 2D)
+    if n == 1:
+        axes = axes.reshape(1, -1)  # Convert 1D array to 2D array with shape (1, 3)
+
+    for i, result in enumerate(results_list):
+        X = result['X']
+        labels_custom = np.array([l if l is not None else -1 for l in result['custom_labels']])
+        labels_sklearn = result['sklearn_labels']
+        labels_new = result['new_labels']
+
+        # --- Custom HDBSCAN ---
+        ax1 = axes[i, 0]
+        unique_custom = np.unique(labels_custom)
+        for label in unique_custom:
+            mask = labels_custom == label
+            ax1.scatter(X[mask, 0], X[mask, 1], 
+                        c='black' if label == -1 else None,
+                        label='Noise' if label == -1 else f'Cluster {label}',
+                        s=10 if label == -1 else 30, alpha=0.5)
+        ax1.set_title(f"Custom HDBSCAN - {result['title']}")
+        ax1.legend(loc='upper right')
+
+        # --- Sklearn HDBSCAN ---
+        ax2 = axes[i, 1]
+        unique_sklearn = np.unique(labels_sklearn)
+        for label in unique_sklearn:
+            mask = labels_sklearn == label
+            ax2.scatter(X[mask, 0], X[mask, 1],
+                        c='black' if label == -1 else None,
+                        label='Noise' if label == -1 else f'Cluster {label}',
+                        s=10 if label == -1 else 30, alpha=0.5)
+        ax2.set_title(f"Sklearn HDBSCAN - {result['title']}")
+        ax2.legend(loc='upper right')
+
+        # --- New HDBSCAN (hdbscan package) ---
+        ax3 = axes[i, 2]
+        unique_new = np.unique(labels_new)
+        for label in unique_new:
+            mask = labels_new == label
+            ax3.scatter(X[mask, 0], X[mask, 1],
+                        c='black' if label == -1 else None,
+                        label='Noise' if label == -1 else f'Cluster {label}',
+                        s=10 if label == -1 else 30, alpha=0.5)
+        ax3.set_title(f"New HDBSCAN - {result['title']}")
+        ax3.legend(loc='upper right')
+
+    plt.tight_layout()
+    plt.suptitle("HDBSCAN Comparison Across Datasets", fontsize=18, y=1.02)
+    return fig
