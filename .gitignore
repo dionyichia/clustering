@@ -6,4 +6,4 @@ dist/*
 *egg-info
 *notebooks/.ipynb_checkpoints/*
 __pycache__/
-
+chong/GPUfuncs/core_distance/gaia_dr2_ra_dec_50M.txt
