@@ -1,3 +1,4 @@
+#include "core_dist.hpp"
 #include <algorithm>
 #include <hip/hip_runtime.h>
 #include <vector>
@@ -8,7 +9,7 @@
 
 // TODO: add param for other distance metrics 
 // calculates core distance matrix using euclidean distance
-__device__ void compute_core_dist(const float* tileBuf,
+__device__ float compute_dist(const float* tileBuf,
                                   int tileM, int tileK,
                                   float& acc)
 {
@@ -22,6 +23,7 @@ __device__ void compute_core_dist(const float* tileBuf,
     float diff = va - vb;
     acc += diff*diff;
   }
+  return sqrtf(acc);
 }
 
 // Load the (tileM × tileK) block of A into shared memory.
@@ -85,7 +87,7 @@ __global__ void pairwise_tiled(const float* A, // rows: M, cols: K
     load_ATile(nextBuf+tileM*tileK, A, colBase, k0,M, K, tileK);
 
     // 2) Compute on the “current” buffer
-    compute_core_dist(currBuf, tileM, tileK, acc);
+    compute_dist(currBuf, tileM, tileK, acc);
 
     // 3) barrier: now nextBuf is fully loaded
     __syncthreads();
@@ -95,7 +97,7 @@ __global__ void pairwise_tiled(const float* A, // rows: M, cols: K
   }
   __syncthreads();
   float* lastBuf = useBuf0 ? buf0 : buf1;
-  compute_core_dist(lastBuf, tileM, tileK, acc);
+  compute_dist(lastBuf, tileM, tileK, acc);
 
   int r = rowBase + localRow;
   int c = colBase + localCol;
@@ -105,55 +107,78 @@ __global__ void pairwise_tiled(const float* A, // rows: M, cols: K
   }
 }
 
-std::vector<float> compute_core_distances_gpu(
+std::vector<float> compute_distances_gpu(
     const std::vector<float>& hA,
-    int M=16384, int K=10,
-    int tileM = 64, int tileK = 64,
-    int minPts=5)
-{
+    int M = 16384,
+    int K = 10,
+    int tileM = 32,
+    int tileK = 32
+) {
     // 1) Bounds and shared-mem checks
     hipDeviceProp_t prop;
     hipGetDeviceProperties(&prop, 0);
-    size_t maxSmem = prop.sharedMemPerBlock;
-    size_t bufFloats = 2u * tileM * tileK;
+    size_t maxSmem    = prop.sharedMemPerBlock;
+    size_t bufFloats  = 2u * tileM * tileK;
     size_t shmemBytes = 2u * bufFloats * sizeof(float);
     assert(shmemBytes <= maxSmem);
 
-    // 2) Allocate + copy
-    float *dA, *dC;
-    hipMalloc(&dA, M*(size_t)K*sizeof(float));
-    hipMalloc(&dC, M*(size_t)M*sizeof(float));
-    hipMemcpy(dA, hA.data(), M*(size_t)K*sizeof(float),
+    // 2) Allocate + copy input
+    float *d_data, *d_dist;
+    hipMalloc(&d_data, (size_t)M * K * sizeof(float));
+    hipMalloc(&d_dist, (size_t)M * M * sizeof(float));
+    hipMemcpy(d_data, hA.data(),
+              (size_t)M * K * sizeof(float),
               hipMemcpyHostToDevice);
 
-    // 3) Launch
+    // 3) Launch tiled kernel
     dim3 block(tileM, tileM),
-         grid((M + tileM-1)/tileM, (M + tileM-1)/tileM);
-    hipLaunchKernelGGL(pairwise_tiled,
-                       grid, block, shmemBytes, 0,
-                       dA, dC, M, K, tileK);
+         grid((M + tileM - 1) / tileM,
+              (M + tileM - 1) / tileM);
+    hipLaunchKernelGGL(
+        pairwise_tiled,
+        grid, block,
+        shmemBytes, 0,
+        d_data,    
+        d_dist,    
+        M, K, tileK
+    );
     hipDeviceSynchronize();
 
-    // 4) Copy back the full M×M distance matrix
-    std::vector<float> hC(M*(size_t)M);
-    hipMemcpy(hC.data(), dC, M*(size_t)M*sizeof(float),
+    // 4) Copy back full M×M distance matrix
+    std::vector<float> h_dist((size_t)M * M);
+    hipMemcpy(h_dist.data(),
+              d_dist,                   
+              (size_t)M * M * sizeof(float),
               hipMemcpyDeviceToHost);
 
-    // 5) Compute the k-th neighbor for each row
+    // 5) Cleanup
+    hipFree(d_data);
+    hipFree(d_dist);
+
+    return h_dist;
+}
+
+std::vector<float> compute_core_distances(
+    const std::vector<float>& distMatrix,
+    int M,
+    int minPts = 5
+) {
     std::vector<float> coreDist(M);
-    for(int i = 0; i < M; ++i){
-        auto rowBegin = hC.begin() + i*(size_t)M;
+    for (int i = 0; i < M; ++i) {
+        // slice out row i
+        auto rowBegin = distMatrix.begin() + (size_t)i * M;
         std::vector<float> row(rowBegin, rowBegin + M);
+
+        // ignore self-distance
         row[i] = std::numeric_limits<float>::infinity();
-        std::nth_element(row.begin(),
-                         row.begin() + (minPts-1),
-                         row.end());
-        coreDist[i] = row[minPts-1];
+
+        // find the minPts-th smallest
+        std::nth_element(
+            row.begin(),
+            row.begin() + (minPts - 1),
+            row.end()
+        );
+        coreDist[i] = row[minPts - 1];
     }
-
-    // 6) Cleanup
-    hipFree(dA);
-    hipFree(dC);
-
     return coreDist;
 }
