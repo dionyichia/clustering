@@ -305,7 +305,7 @@ void convertToMutualReachability(
 // Print CLI Usage Instructions
 void printUsage(char* prog) {
   std::cerr << R"(Usage:
-    )" << prog << R"( --dimensions D --minpts K --input [FILENAME] --distMetric M [--minkowskiP p]
+    )" << prog << R"( --dimensions D --minpts K --input [FILENAME] --distMetric M --minkowskiP p --minclustersize min_cluster_size]
 
 Parameters:
   --dimensions D   Number of features per data point (integer > 0)
@@ -313,6 +313,7 @@ Parameters:
   --input FILE     Path to input file
   --distMetric M   Distance metric (1= Manhattan,2= Euclidean,3 = Chebyshev,4 = Minkowski)
   --minkowskiP p   P-Value for Minkowski Distance
+  --minclustersize min_cluster_size minimum cluster size value for cluster extraction
 )";
 }
 
@@ -402,6 +403,7 @@ int main(int argc, char** argv) {
     std::vector<Point> points;
     int dimensions = NULL;
     int k = NULL;
+    int min_cluster_size = NULL;
     int metricChoice = NULL;
     float minkowskiP = NULL;
     DistanceMetric metric;
@@ -412,6 +414,7 @@ int main(int argc, char** argv) {
         --input (string): name of file storing input data
         --distanceMetric (int): Choose Distance Metric [1: Manhattan, 2: Euclidean, 3: Chebyshev, 4:Minkowski]
         --minkowskiP (float): P-value for minkowski
+        --minclustersize (int): used in cluster extraction
     */
     int i = 1;
     while (i + 1 < argc) {
@@ -488,6 +491,17 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
+        else if (!strcmp(argv[i], "--minclustersize")){
+            try{
+                min_cluster_size = std::stoi(argv[i+1]);
+                std::cout << "Min Cluster Size: " << min_cluster_size << "\n";
+                i += 2;
+            } catch(const std::exception& e) {
+                std::cerr << e.what() << "\n";
+                printUsage(argv[0]);
+                return 1;
+            }
+        }
         else {
             // unrecognized flag: skip just the flag
             std::cerr << "Warning: unknown option '" << argv[i] << "\n";
@@ -533,7 +547,6 @@ int main(int argc, char** argv) {
         else{
             core_dist[i] = coreDist;
         }
-        // 2) (Optionally) extract the k neighbors if you need the graph
         std::vector<std::pair<int,double>> nbrs;
         nbrs.reserve(k);
         while (!heap.empty()) {
