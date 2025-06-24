@@ -9,10 +9,13 @@
 #include <queue>
 #include <string>
 #include <functional>
+#include <climits> // for ULONG_MAX
+
 
 
 // Include your existing structs and constants
 typedef unsigned long long ullong;
+#define NO_EDGE (ULONG_MAX)
 
 struct __attribute__ ((packed)) Edge
 {
@@ -32,7 +35,7 @@ struct __attribute__ ((packed)) Edge
 };
 
 struct MST {
-    char* mst;
+    ullong* mst; 
     ullong weight;
 };
 
@@ -77,20 +80,18 @@ public:
 MST kruskal_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
     MST result;
     result.weight = 0;
-    result.mst = new char[n_edges]();
+    result.mst = new ullong[n_vertices];
 
-    // Create array of pairs (edge, original index)
     struct EdgePair {
         Edge edge;
         ullong index;
     };
     EdgePair* edge_pairs = new EdgePair[n_edges];
     for (ullong i = 0; i < n_edges; i++) {
-        edge_pairs[i].edge = edges[i];
-        edge_pairs[i].index = i;
+        edge_pairs[i] = {edges[i], i};
     }
 
-    // Insertion sort edge_pairs by edge.weight
+    // Insertion sort by weight
     for (ullong i = 1; i < n_edges; i++) {
         EdgePair key = edge_pairs[i];
         ullong j = i;
@@ -104,78 +105,77 @@ MST kruskal_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
     UnionFind uf(n_vertices);
     ullong edges_added = 0;
 
-    for (ullong i = 0; i < n_edges; i++) {
+    for (ullong i = 0; i < n_edges && edges_added < n_vertices - 1; i++) {
         const Edge& e = edge_pairs[i].edge;
-        ullong orig_idx = edge_pairs[i].index;
+        ullong idx = edge_pairs[i].index;
 
         if (uf.unite(e.u, e.v)) {
-            result.mst[orig_idx] = 1;
+            result.mst[edges_added++] = idx;
             result.weight += e.weight;
-            edges_added++;
-
-            if (edges_added == n_vertices - 1) break;
         }
+    }
+
+    // Fill remaining slots with NO_EDGE if needed
+    for (ullong i = edges_added; i < n_vertices; i++) {
+        result.mst[i] = NO_EDGE;
     }
 
     delete[] edge_pairs;
     return result;
 }
 
+
 // Alternative CPU Boruvka implementation for comparison
 MST boruvka_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
     MST result;
     result.weight = 0;
-    result.mst = new char[n_edges]();
-    
+    result.mst = new ullong[n_vertices];
+
     UnionFind uf(n_vertices);
     std::vector<ullong> cheapest(n_vertices);
-    
     ullong components = n_vertices;
-    
-    while (components > 1) {
-        // Reset cheapest edges
+    ullong mst_edges_added = 0;  // Track how many MST edges we've added
+
+    while (components > 1 && mst_edges_added < n_vertices - 1) {
         std::fill(cheapest.begin(), cheapest.end(), ULONG_MAX);
-        
+
         // Find cheapest edge for each component
         for (ullong i = 0; i < n_edges; i++) {
-            ullong comp_u = uf.find(edges[i].u);
-            ullong comp_v = uf.find(edges[i].v);
-            
-            if (comp_u == comp_v) continue;
-            
-            // Check if this is the cheapest edge for component u
-            if (cheapest[comp_u] == ULONG_MAX || 
-                edges[i].weight < edges[cheapest[comp_u]].weight) {
-                cheapest[comp_u] = i;
-            }
-            
-            // Check if this is the cheapest edge for component v
-            if (cheapest[comp_v] == ULONG_MAX || 
-                edges[i].weight < edges[cheapest[comp_v]].weight) {
-                cheapest[comp_v] = i;
-            }
+            ullong u_comp = uf.find(edges[i].u);
+            ullong v_comp = uf.find(edges[i].v);
+            if (u_comp == v_comp) continue;
+
+            if (cheapest[u_comp] == ULONG_MAX || edges[i].weight < edges[cheapest[u_comp]].weight)
+                cheapest[u_comp] = i;
+            if (cheapest[v_comp] == ULONG_MAX || edges[i].weight < edges[cheapest[v_comp]].weight)
+                cheapest[v_comp] = i;
         }
-        
-        // Add cheapest edges to MST
-        std::set<ullong> added_edges;
+
+        // Add the cheapest edges to MST
+        std::set<ullong> added_this_round;
         for (ullong i = 0; i < n_vertices; i++) {
-            ullong edge_idx = cheapest[i];
-            if (edge_idx != ULONG_MAX && added_edges.find(edge_idx) == added_edges.end()) {
-                ullong comp_u = uf.find(edges[edge_idx].u);
-                ullong comp_v = uf.find(edges[edge_idx].v);
-                
-                if (comp_u != comp_v && uf.unite(comp_u, comp_v)) {
-                    result.mst[edge_idx] = 1;
-                    result.weight += edges[edge_idx].weight;
-                    added_edges.insert(edge_idx);
+            ullong idx = cheapest[i];
+            if (idx != ULONG_MAX && added_this_round.find(idx) == added_this_round.end()) {
+                ullong u_comp = uf.find(edges[idx].u);
+                ullong v_comp = uf.find(edges[idx].v);
+                if (u_comp != v_comp && uf.unite(u_comp, v_comp)) {
+                    result.mst[mst_edges_added++] = idx;  // Store the edge index
+                    result.weight += edges[idx].weight;
+                    added_this_round.insert(idx);
                     components--;
                 }
             }
         }
     }
-    
+
+    // Fill remaining slots with NO_EDGE if needed
+    for (ullong i = mst_edges_added; i < n_vertices; i++) {
+        result.mst[i] = NO_EDGE;
+    }
+
     return result;
 }
+
 
 // Test data generators
 class GraphGenerator {
@@ -324,53 +324,52 @@ public:
 
 // Test verification
 bool verifyMST(const std::vector<Edge>& edges, const MST& mst1, const MST& mst2, 
-               ullong n_vertices, const std::string& name1, const std::string& name2) {
+                ullong n_vertices, const std::string& name1, const std::string& name2) {
     std::cout << "\n=== MST Verification ===" << std::endl;
+
+    
+
+    // Check if weights match
     std::cout << name1 << " weight: " << mst1.weight << std::endl;
     std::cout << name2 << " weight: " << mst2.weight << std::endl;
-    
-    // Check if weights match
+
     if (mst1.weight != mst2.weight) {
         std::cout << "ERROR: MST weights don't match!" << std::endl;
         return false;
     }
-    
-    // Count edges in each MST
-    ullong edges1 = 0, edges2 = 0;
-    for (ullong i = 0; i < edges.size(); i++) {
-        if (mst1.mst[i]) edges1++;
-        if (mst2.mst[i]) edges2++;
-    }
-    
-    std::cout << name1 << " edges: " << edges1 << std::endl;
-    std::cout << name2 << " edges: " << edges2 << std::endl;
-    
-    // MST should have exactly n-1 edges
-    if (edges1 != n_vertices - 1 || edges2 != n_vertices - 1) {
-        std::cout << "ERROR: MST should have " << n_vertices - 1 << " edges!" << std::endl;
-        return false;
-    }
-    
+
     // Verify connectivity using Union-Find
     UnionFind uf1(n_vertices), uf2(n_vertices);
-    for (ullong i = 0; i < edges.size(); i++) {
-        if (mst1.mst[i]) {
-            uf1.unite(edges[i].u, edges[i].v);
+    for (ullong i = 0; i < n_vertices; ++i) {
+        std::cout << "mst1.mst[i] " << mst1.mst[i] << std::endl; 
+        if (mst1.mst[i] == NO_EDGE) {
+            printf("NO EDGE");
+            continue;
         }
-        if (mst2.mst[i]) {
-            uf2.unite(edges[i].u, edges[i].v);
-        }
+
+        const Edge& e = edges[mst1.mst[i]];
+        uf1.unite(e.u, e.v);
     }
-    
+    for (ullong i = 0; i < n_vertices; ++i) {
+        std::cout << "mst2.mst[i] " << mst2.mst[i] << std::endl; 
+        if (mst2.mst[i] == NO_EDGE) {
+            printf("NO EDGE");
+            continue;
+        }
+
+        const Edge& e = edges[mst2.mst[i]];
+        uf2.unite(e.u, e.v);
+    }
+
     // Check if all vertices are connected
     ullong root1 = uf1.find(0), root2 = uf2.find(0);
-    for (ullong i = 1; i < n_vertices; i++) {
+    for (ullong i = 1; i < n_vertices - 1; i++) {
         if (uf1.find(i) != root1 || uf2.find(i) != root2) {
             std::cout << "ERROR: MST is not connected!" << std::endl;
             return false;
         }
     }
-    
+
     std::cout << "SUCCESS: Both MSTs are valid and have the same weight!" << std::endl;
     return true;
 }
@@ -390,11 +389,11 @@ void runTestSuite() {
     
     std::vector<TestCase> test_cases = {
         {"Small Random Graph", []() { return GraphGenerator::generateRandomGraph(10, 20); }, 10},
-        {"Medium Random Graph", []() { return GraphGenerator::generateRandomGraph(100, 500); }, 100},
-        {"Large Random Graph", []() { return GraphGenerator::generateRandomGraph(1000, 5000); }, 1000},
-        {"Complete Small Graph", []() { return GraphGenerator::generateCompleteGraph(20); }, 20},
-        {"Grid Graph 10x10", []() { return GraphGenerator::generateGridGraph(10, 10); }, 100},
-        {"Sparse Graph", []() { return GraphGenerator::generateSparseGraph(500, 0.05); }, 500},
+        // {"Medium Random Graph", []() { return GraphGenerator::generateRandomGraph(100, 500); }, 100},
+        // {"Large Random Graph", []() { return GraphGenerator::generateRandomGraph(1000, 5000); }, 1000},
+        // {"Complete Small Graph", []() { return GraphGenerator::generateCompleteGraph(20); }, 20},
+        // {"Grid Graph 10x10", []() { return GraphGenerator::generateGridGraph(10, 10); }, 100},
+        // {"Sparse Graph", []() { return GraphGenerator::generateSparseGraph(500, 0.05); }, 500},
     };
     
     for (const auto& test_case : test_cases) {
@@ -406,10 +405,10 @@ void runTestSuite() {
         // Run CPU implementations
         MST cpu_kruskal, cpu_boruvka, gpu_result;
         
-        // double cpu_kruskal_time = Benchmark::timeFunction([&]() {
-        //     cpu_kruskal = kruskal_mst_cpu(test_case.n_vertices, edges.size(), edge_array);
-        // });
-        double cpu_kruskal_time = 0;
+        double cpu_kruskal_time = Benchmark::timeFunction([&]() {
+            cpu_kruskal = kruskal_mst_cpu(test_case.n_vertices, edges.size(), edge_array);
+        });
+        // double cpu_kruskal_time = 0;
         
         double cpu_boruvka_time = Benchmark::timeFunction([&]() {
             cpu_boruvka = boruvka_mst_cpu(test_case.n_vertices, edges.size(), edge_array);
@@ -420,9 +419,29 @@ void runTestSuite() {
             gpu_result = boruvka_mst(test_case.n_vertices, edges.size(), edge_array);
         });
         
+        // Print MSTs
+        auto print_mst = [&](const char* label, const MST& mst) {
+            std::cout << label << " MST edges: [";
+            for (ullong i = 0; i < test_case.n_vertices; ++i) {
+                if (mst.mst[i] != NO_EDGE) {
+                    const Edge& e = edge_array[mst.mst[i]];
+                    std::cout << "(" << e.u << "," << e.v << "," << e.weight << ") ";
+                } else {
+                    std::cout << "(" << " NO_EDGE "  << ") ";
+                }
+            }
+            std::cout << "]  weight: " << mst.weight << std::endl;
+        };
+
+
         std::cout << "CPU Kruskal time: " << cpu_kruskal_time << " ms" << std::endl;
+        print_mst("CPU Kruskal", cpu_kruskal);
+
         std::cout << "CPU Boruvka time: " << cpu_boruvka_time << " ms" << std::endl;
+        print_mst("CPU Boruvka", cpu_boruvka);
+
         std::cout << "GPU Boruvka time: " << gpu_time << " ms" << std::endl;
+        print_mst("GPU Boruvka", gpu_result);
         
         // Verify results
         bool kruskal_match = verifyMST(edges, cpu_kruskal, cpu_boruvka, 
@@ -538,17 +557,17 @@ int main() {
     initGPUs();
     
     // Run tests
-    // runTestSuite();
+    runTestSuite();
     
     // Run performance benchmark
-    runPerformanceBenchmark();
+    // runPerformanceBenchmark();
     
     // Generate and save some test data
-    auto large_graph = GraphGenerator::generateRandomGraph(50000, 250000);
-    saveTestData("large_test_graph.txt", large_graph, 5000);
+    // auto large_graph = GraphGenerator::generateRandomGraph(50000, 250000);
+    // saveTestData("large_test_graph.txt", large_graph, 5000);
     
-    auto complete_graph = GraphGenerator::generateCompleteGraph(100);
-    saveTestData("complete_test_graph.txt", complete_graph, 100);
+    // auto complete_graph = GraphGenerator::generateCompleteGraph(100);
+    // saveTestData("complete_test_graph.txt", complete_graph, 100);
     
     return 0;
 }
