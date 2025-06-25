@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
   int minPts = 5;
   // M == rows of input A, number of datapoints
   // K == columns of input A, number of features in one datapoint
-  int M = 1024, K = 512;
+  int M = 1024, K = 10;
 
   // Parse param overrides (if any)
   int i = 1;
