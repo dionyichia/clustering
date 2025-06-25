@@ -181,11 +181,11 @@ class GraphGenerator {
 public:
     // Generate random graph
     static std::vector<Edge> generateRandomGraph(ullong n_vertices, ullong n_edges, 
-                                               float min_weight = 1.0f, float = 5.0f,
+                                               float min_weight = 1.0f, float max_weight = 5.0f,
                                                uint seed = 42) {
         std::mt19937 gen(seed);
         std::uniform_int_distribution<uint> vertex_dist(0, n_vertices - 1);
-        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
+        std::uniform_real_distribution<float> weight_dist(min_weight, max_weight);
         
         std::vector<Edge> edges;
         std::set<std::pair<uint, uint>> edge_set;
@@ -208,10 +208,10 @@ public:
     
     // Generate complete graph
     static std::vector<Edge> generateCompleteGraph(ullong n_vertices, 
-                                                 float min_weight = 1.0f, float = 5.0f,
+                                                 float min_weight = 1.0f, float max_weight = 5.0f,
                                                  uint seed = 42) {
         std::mt19937 gen(seed);
-        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
+        std::uniform_real_distribution<float> weight_dist(min_weight, max_weight);
         
         std::vector<Edge> edges;
         for (uint u = 0; u < n_vertices; u++) {
@@ -225,10 +225,10 @@ public:
     
     // Generate grid graph
     static std::vector<Edge> generateGridGraph(ullong width, ullong height,
-                                             float min_weight = 1.0f, float = 5.0f,
+                                             float min_weight = 1.0f, float max_weight = 5.0f,
                                              uint seed = 42) {
         std::mt19937 gen(seed);
-        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
+        std::uniform_real_distribution<float> weight_dist(min_weight, max_weight);
         
         std::vector<Edge> edges;
         
@@ -255,11 +255,11 @@ public:
     
     // Generate sparse graph (tree + some extra edges)
     static std::vector<Edge> generateSparseGraph(ullong n_vertices, double density = 0.1,
-                                                float min_weight = 1.0f, float = 5.0f,
+                                                float min_weight = 1.0f, float max_weight = 5.0f,
                                                 uint seed = 42) {
         std::mt19937 gen(seed);
         std::uniform_int_distribution<uint> vertex_dist(0, n_vertices - 1);
-        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
+        std::uniform_real_distribution<float> weight_dist(min_weight, max_weight);
         std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
         
         std::vector<Edge> edges;
@@ -345,7 +345,7 @@ bool verifyMST(const std::vector<Edge>& edges, const MST& mst1, const MST& mst2,
         if (mst1.mst[i] == 1) {
             const Edge& e = edges[i];
             uf1.unite(e.u, e.v);
-            std::cout << name1 << " includes edge " << i << ": (" << e.u << "," << e.v << "," << e.weight << ")" << std::endl;
+            // std::cout << name1 << " includes edge " << i << ": (" << e.u << "," << e.v << "," << e.weight << ")" << std::endl;
         }
     }
     
@@ -354,7 +354,7 @@ bool verifyMST(const std::vector<Edge>& edges, const MST& mst1, const MST& mst2,
         if (mst2.mst[i] == 1) {
             const Edge& e = edges[i];
             uf2.unite(e.u, e.v);
-            std::cout << name2 << " includes edge " << i << ": (" << e.u << "," << e.v << "," << e.weight << ")" << std::endl;
+            // std::cout << name2 << " includes edge " << i << ": (" << e.u << "," << e.v << "," << e.weight << ")" << std::endl;
         }
     }
 
