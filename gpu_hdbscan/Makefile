@@ -9,22 +9,20 @@ HIPFLAGS = -std=c++17 -O3 --offload-arch=gfx1030 --offload-arch=gfx1031 --offloa
 
 # Directories
 BUILDDIR = build
-FINAL_DIR = final
-HIP_DIR = hip_code
+FINAL_DIR = kd_tree
+BORUVKA_DIR = boruvka
 SINGLE_DIR = single_linkage
 
 # Source files from each directory
 FINAL_SOURCES = $(wildcard $(FINAL_DIR)/src/*.cpp)
 # FINAL_KDTREE = $(FINAL_DIR)/kdtree.cpp
-HIP_SOURCES = $(wildcard $(HIP_DIR)/*.cpp)
-HIP_GPU_SOURCES = $(wildcard $(HIP_DIR)/*.hip)
+HIP_SOURCES = $(wildcard $(BORUVKA_DIR)/*.cpp)
 SINGLE_SOURCES = $(wildcard $(SINGLE_DIR)/*.cpp)
 
 # Object files
 FINAL_OBJECTS = $(patsubst $(FINAL_DIR)/src/%.cpp,$(BUILDDIR)/final_%.o,$(FINAL_SOURCES))
 # FINAL_KDTREE_OBJ = $(BUILDDIR)/final_kdtree.o
-HIP_OBJECTS = $(patsubst $(HIP_DIR)/%.cpp,$(BUILDDIR)/hip_%.o,$(HIP_SOURCES))
-HIP_GPU_OBJECTS = $(patsubst $(HIP_DIR)/%.hip,$(BUILDDIR)/hip_gpu_%.o,$(HIP_GPU_SOURCES))
+HIP_OBJECTS = $(patsubst $(BORUVKA_DIR)/%.cpp,$(BUILDDIR)/hip_%.o,$(HIP_SOURCES))
 SINGLE_OBJECTS = $(patsubst $(SINGLE_DIR)/%.cpp,$(BUILDDIR)/single_%.o,$(SINGLE_SOURCES))
 
 # Filter out main.cpp objects to avoid multiple main functions
@@ -36,7 +34,7 @@ MAIN_OBJ = $(BUILDDIR)/main.o
 EXECUTABLE = $(BUILDDIR)/gpu_hdbscan
 
 # All object files for linking
-ALL_OBJECTS = $(FINAL_OBJECTS) $(HIP_OBJECTS) $(HIP_GPU_OBJECTS) $(SINGLE_OBJECTS) $(MAIN_OBJ)
+ALL_OBJECTS = $(FINAL_OBJECTS) $(HIP_OBJECTS) $(SINGLE_OBJECTS) $(MAIN_OBJ)
 
 # Default target
 all: $(EXECUTABLE)
@@ -54,12 +52,8 @@ $(BUILDDIR)/final_%.o: $(FINAL_DIR)/src/%.cpp | $(BUILDDIR)
 # 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Compile hip_code/ C++ files
-$(BUILDDIR)/hip_%.o: $(HIP_DIR)/%.cpp | $(BUILDDIR)
+$(BUILDDIR)/hip_%.o: $(BORUVKA_DIR)/%.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-# Compile hip_code/ GPU files (.hip)
-$(BUILDDIR)/hip_gpu_%.o: $(HIP_DIR)/%.hip | $(BUILDDIR)
-	$(HIPCC) $(HIPFLAGS) -c $< -o $@
 
 # Compile single_linkage/ files
 $(BUILDDIR)/single_%.o: $(SINGLE_DIR)/%.cpp | $(BUILDDIR)
@@ -77,7 +71,7 @@ $(EXECUTABLE): $(ALL_OBJECTS)
 final_only: $(FINAL_OBJECTS)
 	@echo "Compiled final/ components"
 
-hip_only: $(HIP_OBJECTS) $(HIP_GPU_OBJECTS)
+hip_only: $(HIP_OBJECTS)
 	@echo "Compiled hip_code/ components"
 
 single_only: $(SINGLE_OBJECTS)
@@ -87,7 +81,7 @@ single_only: $(SINGLE_OBJECTS)
 libfinal.a: $(FINAL_OBJECTS) | $(BUILDDIR)
 	ar rcs $(BUILDDIR)/libfinal.a $^
 
-libhip.a: $(HIP_OBJECTS) $(HIP_GPU_OBJECTS) | $(BUILDDIR)
+libhip.a: $(HIP_OBJECTS) | $(BUILDDIR)
 	ar rcs $(BUILDDIR)/libhip.a $^
 
 libsingle.a: $(SINGLE_OBJECTS) | $(BUILDDIR)
@@ -118,10 +112,9 @@ info:
 	@echo "=== Build Configuration ==="
 	@echo "Final sources: $(FINAL_SOURCES)"
 	@echo "HIP sources: $(HIP_SOURCES)"
-	@echo "HIP GPU sources: $(HIP_GPU_SOURCES)"
 	@echo "Single linkage sources: $(SINGLE_SOURCES)"
 	@echo "Final objects: $(FINAL_OBJECTS)"
-	@echo "HIP objects: $(HIP_OBJECTS) $(HIP_GPU_OBJECTS)"
+	@echo "HIP objects: $(HIP_OBJECTS)"
 	@echo "Single objects: $(SINGLE_OBJECTS)"
 	@echo "All objects: $(ALL_OBJECTS)"
 
