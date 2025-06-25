@@ -51,7 +51,7 @@ struct MST {
 struct GlobalConstants {
     Vertex* vertices;
     Edge* edges;
-    ullong* mst;
+    char* mst;
     ullong n_vertices;
     ullong n_edges;
 };
@@ -77,8 +77,6 @@ __global__ void init_arrs();
 __global__ void reset_arrs();
 __global__ void assign_cheapest();
 __global__ void update_mst();
-__global__ void update_mst_phase1();
-__global__ void update_mst_phase2();
 __global__ void update_mst_simple();
 
 // Add debug kernel to print device state
@@ -107,14 +105,33 @@ __global__ void debug_print_state(const char* label, int max_print = 20) {
                    hipConstGraphParams.edges[i].weight);
         }
         
-        // Print MST array
-        printf("MST array (first %d):\n", max_print);
-        for (int i = 0; i < min(max_print, (int)hipConstGraphParams.n_vertices); i++) {
-            printf("  mst[%d]: %llu\n", i, hipConstGraphParams.mst[i]);
+        // Print MST array - now shows which edges are selected
+        printf("MST array (first %d edges):\n", max_print);
+        for (int i = 0; i < min(max_print, (int)hipConstGraphParams.n_edges); i++) {
+            printf("  mst[%d]: %s (edge: u=%u, v=%u, weight=%u)\n", 
+                   i, 
+                   hipConstGraphParams.mst[i] == 1 ? "SELECTED" : "not selected",
+                   hipConstGraphParams.edges[i].u,
+                   hipConstGraphParams.edges[i].v,
+                   hipConstGraphParams.edges[i].weight);
         }
+        
+        // Count and show selected edges
+        int selected_count = 0;
+        printf("Selected MST edges:\n");
+        for (int i = 0; i < min(max_print, (int)hipConstGraphParams.n_edges); i++) {
+            if (hipConstGraphParams.mst[i] == 1) {
+                printf("  Edge %d: (%u,%u) weight=%u\n", 
+                       i,
+                       hipConstGraphParams.edges[i].u,
+                       hipConstGraphParams.edges[i].v,
+                       hipConstGraphParams.edges[i].weight);
+                selected_count++;
+            }
+        }
+        printf("Total selected edges shown: %d\n", selected_count);
     }
 }
-
 
 MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) {
     MST mst;
@@ -127,30 +144,18 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
         printf("ERROR: Invalid input - zero vertices or edges\n");
         return mst;
     }
-    
-    // Print first few input edges
-    printf("Input edges (first 5):\n");
-    for (int i = 0; i < min(5, (int)n_edges); i++) {
-        printf("  edge[%d]: u=%u, v=%u, weight=%u\n", 
-               i, edge_list[i].u, edge_list[i].v, edge_list[i].weight);
-    }
 
     std::cout << "start malloc : " << std::endl;
 
-    ullong* mst_tree = (ullong *) malloc((n_vertices) * sizeof(ullong));
-    
-    // DEBUG 2: Initialize host array for comparison
-    for (ullong i = 0; i < n_vertices; i++) {
-        mst_tree[i] = NO_EDGE;
-    }
+    char* mst_tree = (char*) malloc(sizeof(char) * n_edges);
 
-    ullong* d_mst;
+    char* d_mst;
     Vertex* d_vertices;
     Edge* d_edges;
 
     // Add error checking to all HIP calls
-    HIP_CHECK(hipMalloc(&d_mst, sizeof(ullong) * n_vertices));
-    HIP_CHECK(hipMemset(d_mst, 0, sizeof(ullong) * n_vertices));
+    HIP_CHECK(hipMalloc(&d_mst, sizeof(char) * n_edges));
+    HIP_CHECK(hipMemset(d_mst, 0, sizeof(char) * n_edges));
     HIP_CHECK(hipMalloc(&d_vertices, sizeof(Vertex) * n_vertices));
     HIP_CHECK(hipMalloc(&d_edges, sizeof(Edge) * n_edges));
     HIP_CHECK(hipMemcpy(d_edges, edge_list, sizeof(Edge) * n_edges, hipMemcpyHostToDevice));
@@ -207,10 +212,8 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
         HIP_CHECK(hipDeviceSynchronize());
 
         std::cout << "updating: " << std::endl;
-        // update_mst<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
-        // update_mst_phase1<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
-        // update_mst_phase2<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
-        update_mst_simple<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
+        update_mst<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
+        // update_mst_simple<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
         HIP_CHECK(hipDeviceSynchronize());
 
         // DEBUG 7: Check after update_mst
@@ -238,38 +241,25 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
     debug_print_state<<<1, 1>>>("FINAL STATE");
     HIP_CHECK(hipDeviceSynchronize());
 
-    HIP_CHECK(hipMemcpy(mst_tree, d_mst, sizeof(ullong) * n_vertices, hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(mst_tree, d_mst, sizeof(char) * n_edges, hipMemcpyDeviceToHost));
     HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(ullong)));
 
     // DEBUG 10: Print final results
     printf("\n=== FINAL RESULTS ===\n");
     printf("Final MST weight: %llu\n", mst_weight);
     printf("Final n_unions: %llu (expected: %llu)\n", n_unions, n_vertices - 1);
-    printf("MST edges:\n");
-    for (ullong i = 0; i < n_vertices; i++) {
-        if (mst_tree[i] != NO_EDGE) {
-            printf("  mst[%llu] = edge %llu\n", i, mst_tree[i]);
-        }
-    }
 
     mst.mst = mst_tree;
     mst.weight = mst_weight;
 
     std::cout << "done copying" << std::endl;
 
-    for (ullong i = 0; i < n_vertices; i++) {
-        if (mst.mst[i] != NO_EDGE) {
-            printf("  mst[%llu] = edge %llu\n", i, mst.mst[i]);
-        }
-    }
-
-
     hipFree(d_mst);
     hipFree(d_vertices);
     hipFree(d_edges);
 
     return mst;
-}
+}                   
 
 __device__ inline int edge_cmp(const Edge* edges, const ullong i, const ullong j)
 {
@@ -301,13 +291,16 @@ __device__ inline ullong get_component(Vertex* componentlist, const ullong i) {
     // }
     // return curr;
 
-    ullong curr = i;
-    ullong next;
+    // ullong curr = i;
+    // ullong next;
     
-    // Single traversal to root with volatile reads
-    while ((next = ((volatile Vertex*)componentlist)[curr].component) != curr) {
-        curr = next;
-    }
+    // // Single traversal to root with volatile reads
+    // while ((next = ((volatile Vertex*)componentlist)[curr].component) != curr) {
+    //     curr = next;
+    // }
+    // return curr;
+
+    ullong curr = componentlist[i].component;
     return curr;
 }
 
@@ -329,6 +322,9 @@ __device__ inline void flatten_component(Vertex* componentlist, const ullong i) 
 // TODO: Check atomicCAS
 __device__ inline void merge_components(Vertex* componentlist, const ullong i,
                                         const ullong j) {
+    componentlist[i].component = j;
+    return;
+
     // ullong u = i;
     // ullong v = j;
     // componentlist[i].component = j;
@@ -339,19 +335,19 @@ __device__ inline void merge_components(Vertex* componentlist, const ullong i,
     //     old = atomicCAS(&(componentlist[u].component), u, v);
     // } while (old != u);
         // Find roots of both components
-    ullong root_i = get_component(componentlist, i);
-    ullong root_j = get_component(componentlist, j);
+    // ullong root_i = get_component(componentlist, i);
+    // ullong root_j = get_component(componentlist, j);
     
-    if (root_i == root_j) return; // Already merged
+    // if (root_i == root_j) return; // Already merged
     
-    // Ensure consistent ordering to prevent deadlocks
-    if (root_i > root_j) {
-        ullong temp = root_i; root_i = root_j; root_j = temp;
-    }
+    // // Ensure consistent ordering to prevent deadlocks
+    // if (root_i > root_j) {
+    //     ullong temp = root_i; root_i = root_j; root_j = temp;
+    // }
     
-    // Single atomic operation - if it fails, another thread succeeded
-    ullong old = atomicCAS((unsigned long long*)&componentlist[root_j].component, root_j, root_i);
-    return;
+    // // Single atomic operation - if it fails, another thread succeeded
+    // ullong old = atomicCAS((unsigned long long*)&componentlist[root_j].component, root_j, root_i);
+    // return;
 }
 
 __device__ inline bool safe_merge_components(Vertex* componentlist, const ullong i, const ullong j) {
@@ -389,32 +385,29 @@ __device__ inline bool safe_merge_components(Vertex* componentlist, const ullong
 }
 
 __global__ void init_arrs() {
-    // const int threadID = threadIdx.x + blockIdx.x * blockDim.x;
-    // const int blockID = blockIdx.x;
-    // const int block_width = blockDim.x;
+    const int threadID = threadIdx.x + blockIdx.x * blockDim.x;
+    const int blockID = blockIdx.x;
+    const int block_width = blockDim.x;
 
-    // const ullong n_vertices = hipConstGraphParams.n_vertices;
-    // Vertex* const vertices = hipConstGraphParams.vertices;
-
-    // const ullong block_start = (blockID * n_vertices) / NBLOCKS_OTHER;
-    // const ullong block_end = ((blockID + 1) * n_vertices) / NBLOCKS_OTHER;
-
-    // // initialize components
-    // for (ullong i = block_start + threadIdx.x; i < block_end; i += block_width) {
-    //     vertices[i] = Vertex{i, NO_EDGE};
-    //     hipConstGraphParams.mst[i] = NO_EDGE;
-
-    // }
-
-    const ullong threadID = threadIdx.x + blockIdx.x * blockDim.x;
     const ullong n_vertices = hipConstGraphParams.n_vertices;
-    const ullong total_threads = gridDim.x * blockDim.x;
-    
-    // Each thread handles multiple vertices to improve memory throughput
-    for (ullong i = threadID; i < n_vertices; i += total_threads) {
-        hipConstGraphParams.vertices[i] = Vertex{i, NO_EDGE};
-        hipConstGraphParams.mst[i] = NO_EDGE;
+    Vertex* const vertices = hipConstGraphParams.vertices;
+
+    const ullong block_start = (blockID * n_vertices) / NBLOCKS_OTHER;
+    const ullong block_end = ((blockID + 1) * n_vertices) / NBLOCKS_OTHER;
+
+    // initialize components
+    for (ullong i = block_start + threadIdx.x; i < block_end; i += block_width) {
+        vertices[i] = Vertex{i, NO_EDGE};
     }
+
+    // const ullong threadID = threadIdx.x + blockIdx.x * blockDim.x;
+    // const ullong n_vertices = hipConstGraphParams.n_vertices;
+    // const ullong total_threads = gridDim.x * blockDim.x;
+    
+    // // Each thread handles multiple vertices to improve memory throughput
+    // for (ullong i = threadID; i < n_vertices; i += total_threads) {
+    //     hipConstGraphParams.vertices[i] = Vertex{i, NO_EDGE};
+    // }
 }
 
 __global__ void reset_arrs() {
@@ -451,31 +444,32 @@ __global__ void assign_cheapest() {
     // Interleave acccess to list to take advantage of SIMD execution within a warp
     for (ullong i = block_start + threadIdx.x; i < block_end; i += block_width) {
         // __syncthreads(); test removing this, i dont think it is required as no shared memory between threads
-        Edge e = edges[i];
+        __syncthreads();
+        Edge& e = edges[i];
 
         // get root of component u, CHANGLOG: i changed it to assigning root_u to a new variable instead of the edge
         // global params is read-only memory anyways, &  memory access will be slower
         // Initial: e.u = get_component(vertices, e.u);
-        ullong root_u = get_component(vertices, e.u);
+        e.u = get_component(vertices, e.u); // This flattens if im not wrong
 
         // get root of component v
-        ullong root_v = get_component(vertices, e.v);
+        e.v = get_component(vertices, e.v);
 
         // Skip edges that connect a component to itself
-        if (root_u == root_v) {
+        if (e.u == e.v) {
             continue;
         }
 
         // Atomic update cheapest_edge[u]
         // Lock-free update pattern
         // This is the inital cheapeast edge of vertex
-        ullong expected = vertices[root_u].cheapest_edge;
+        ullong expected = vertices[e.u].cheapest_edge;
         // This is your current candidate cheapest edge to be compared with the initial above
         ullong old;
         // While loop condition, if curr candidate still less than initial, execute
         while (expected == NO_EDGE || edge_cmp(edges, i, expected) < 0) {
             // try to update the cheapest edge, return the updated value (candidate edge)
-            old = atomicCAS(&vertices[root_u].cheapest_edge, expected, i);
+            old = atomicCAS(&vertices[e.u].cheapest_edge, expected, i);
 
             // If the cheapest edge is now ur candidate value, break
             if (expected == old) {
@@ -484,13 +478,13 @@ __global__ void assign_cheapest() {
 
             // Else update the initial cheapest edge of vertex to the new value. 
             // (new value beacuse some other thread updated it first, since atomicCAS allows 1 thread to update while the rest wait)
-            expected = old;
+            expected = old; 
         }
 
         // Atomic update cheapest_edge[v]
-        expected = vertices[root_v].cheapest_edge;
+        expected = vertices[e.v].cheapest_edge;
         while (expected == NO_EDGE || edge_cmp(edges, i, expected) < 0) {
-            old = atomicCAS(&vertices[root_v].cheapest_edge, expected, i);
+            old = atomicCAS(&vertices[e.v].cheapest_edge, expected, i);
             if (expected == old) {
                 break;
             }
@@ -525,6 +519,29 @@ __global__ void update_mst() {
 
         const Edge& edge_ptr = edges[edge_ind];
 
+        const ullong j = (i == edge_ptr.u ? edge_ptr.v : edge_ptr.u); // this is the other index
+
+        // // Get components of both vertices
+        // ullong root_i = get_component(vertices, i);
+        // ullong root_j = get_component(vertices, j);
+        
+        // // Skip if vertices are already in the same component
+        // if (root_i == root_j) {
+        //     continue;
+        // }
+
+        // // Check if this edge is the cheapest for both components
+        // bool is_cheapest_for_i = (edge_ind == vertices[root_i].cheapest_edge);
+        // bool is_cheapest_for_j = (edge_ind == vertices[root_j].cheapest_edge);
+        
+        // // If this edge is cheapest for both components, only process it once
+        // // Use a consistent tie-breaking rule: process only when root_i < root_j
+        // if (is_cheapest_for_i && is_cheapest_for_j) {
+        //     if (root_i >= root_j) {
+        //         continue; // Skip this, let the other component handle it
+        //     }
+        // }
+
         // If a cheapest edge connects two different components A and B, both endpoints of that edge will see it as their cheapest_edge.
         // Now in update_mst(), both vertex 3 and 7 will hit edge 12.
             // At i = 3, we detect that:
@@ -532,115 +549,22 @@ __global__ void update_mst() {
             // and edge_ind == vertices[edge_ptr.v].cheapest_edge (edge 12 is still the cheapest for 7)
             // → So skip it.
             // At i = 7, edge_ptr.u = 7, edge_ptr.v = 7 → do the merge.
-        if (edge_ptr.u == i &&
-            edge_ind == vertices[edge_ptr.v].cheapest_edge) {
+        if (edge_ptr.v == i &&
+            edge_ind == vertices[edge_ptr.u].cheapest_edge) {
             continue;
         }
-
-        const ullong j = (i == edge_ptr.u? edge_ptr.v : edge_ptr.u); // this is the other index
 
         // Race Conditions not possible because 1 edge will have max 2 parent components, 
         // and higher idx parent is skipped with earlier condition
         // store the selected edge index at the vertice indx of the ullong array, 
         // since this is parralised by vertice, no race conditions
-        hipConstGraphParams.mst[i] = edge_ind;
+        hipConstGraphParams.mst[edge_ind] = 1;
 
         // sum weights for all cheapest edges in vertice batch, 
         // no double counting as earlier condition would have skipped higher idx parent.
-        batch_edge_weight += edge_ptr.weight;
-
-        // Debug
-        ullong root_i_before = get_component(vertices, i);
-        ullong root_j_before = get_component(vertices, j);
         merge_components(vertices, i, j);
-        ullong root_i_after = get_component(vertices, i);
-        ullong root_j_after = get_component(vertices, j);
-
-        if (threadID < 10) {
-            printf("Thread %d: Before merge: %llu->%llu, %llu->%llu. After: %llu->%llu, %llu->%llu, MST_weight_total: %llu, Batch edge weight: %llu\n",
-                threadID, i, root_i_before, j, root_j_before, i, root_i_after, j, root_j_after,
-                mst_weight_total, batch_edge_weight);
-        }
-        n_unions_made++;
-    }
-
-    atomicAdd(&mst_weight_total, batch_edge_weight);
-    atomicAdd(&n_unions_total, n_unions_made);
-}
-
-// Phase 1: Mark edges for inclusion (no actual merging)
-// Phase 2: Perform merges sequentially or with better synchronization
-__global__ void update_mst_phase1() {
-    const int threadID = threadIdx.x + blockIdx.x * blockDim.x;
-    const int blockID = blockIdx.x;
-    const int block_width = blockDim.x;
-
-    const ullong n_vertices = hipConstGraphParams.n_vertices;
-    Vertex* const vertices = hipConstGraphParams.vertices;
-    Edge* const edges = hipConstGraphParams.edges;
-
-    const ullong block_start = (blockID * n_vertices) / NBLOCKS_OTHER;
-    const ullong block_end = ((blockID + 1) * n_vertices) / NBLOCKS_OTHER;
-
-    // Phase 1: Only validate and mark edges, no merging yet
-    for (ullong i = block_start + threadIdx.x; i < block_end; i += block_width) {
-        const ullong edge_ind = vertices[i].cheapest_edge;
-
-        if (edge_ind == NO_EDGE) {
-            continue;
-        }
-
-        const Edge& edge_ptr = edges[edge_ind];
-
-        // Skip duplicate processing
-        if (edge_ptr.u == i && edge_ind == vertices[edge_ptr.v].cheapest_edge) {
-            continue;
-        }
-
-        const ullong j = (i == edge_ptr.u ? edge_ptr.v : edge_ptr.u);
-
-        // Get current roots (these might change, but we'll validate later)
-        ullong root_i = get_component(vertices, i);
-        ullong root_j = get_component(vertices, j);
-
-        // Only proceed if components are different, if same then remove the selected edge
-        if (root_i != root_j) {
-            atomicCAS(&hipConstGraphParams.mst[i], NO_EDGE, edge_ind);
-        }
-    }
-}
-
-__global__ void update_mst_phase2() {
-    const int threadID = threadIdx.x + blockIdx.x * blockDim.x;
-    const int blockID = blockIdx.x;
-    const int block_width = blockDim.x;
-
-    const ullong n_vertices = hipConstGraphParams.n_vertices;
-    Vertex* const vertices = hipConstGraphParams.vertices;
-    Edge* const edges = hipConstGraphParams.edges;
-
-    const ullong block_start = (blockID * n_vertices) / NBLOCKS_OTHER;
-    const ullong block_end = ((blockID + 1) * n_vertices) / NBLOCKS_OTHER;
-
-    ullong n_unions_made = 0;
-    ullong batch_edge_weight = 0;
-
-    // Phase 2: Perform actual merges with validation
-    for (ullong i = block_start + threadIdx.x; i < block_end; i += block_width) {
-        const ullong edge_ind = hipConstGraphParams.mst[i];
-
-        if (edge_ind == NO_EDGE) {
-            continue;
-        }
-
-        const Edge& edge_ptr = edges[edge_ind];
-        const ullong j = (i == edge_ptr.u ? edge_ptr.v : edge_ptr.u);
-
-        // Double-check that this edge is still valid
-        if (safe_merge_components(vertices, i, j)) {
-            batch_edge_weight += edge_ptr.weight;
-            n_unions_made++;
-        }
+        n_unions_made++;        
+        batch_edge_weight += edge_ptr.weight;
     }
 
     atomicAdd(&mst_weight_total, batch_edge_weight);
@@ -721,6 +645,13 @@ void initGPUs() {
         printf("   Global mem: %.0f MB\n",
                static_cast<float>(deviceProps.totalGlobalMem) / (1024 * 1024));
         printf("   HIP Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
+        hipDeviceReset();  // Clears GPU memory from any prior runs
+
+        size_t freeMem, totalMem;
+        hipMemGetInfo(&freeMem, &totalMem);
+        printf("GPU Memory: Free = %.2f MB, Total = %.2f MB\n",
+            freeMem / (1024.0 * 1024.0), totalMem / (1024.0 * 1024.0));
+
     }
 
     printf("---------------------------------------------------------\n");

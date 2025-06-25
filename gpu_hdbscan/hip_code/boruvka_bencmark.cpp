@@ -35,7 +35,7 @@ struct __attribute__ ((packed)) Edge
 };
 
 struct MST {
-    ullong* mst; 
+    char* mst; 
     ullong weight;
 };
 
@@ -80,7 +80,12 @@ public:
 MST kruskal_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
     MST result;
     result.weight = 0;
-    result.mst = new ullong[n_vertices];
+    result.mst = new char[n_edges];
+    
+    // Initialize all edges as not selected (0)
+    for (ullong i = 0; i < n_edges; i++) {
+        result.mst[i] = 0;
+    }
 
     struct EdgePair {
         Edge edge;
@@ -110,26 +115,26 @@ MST kruskal_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
         ullong idx = edge_pairs[i].index;
 
         if (uf.unite(e.u, e.v)) {
-            result.mst[edges_added++] = idx;
+            result.mst[idx] = 1; // Mark this edge as selected
             result.weight += e.weight;
+            edges_added++;
         }
-    }
-
-    // Fill remaining slots with NO_EDGE if needed
-    for (ullong i = edges_added; i < n_vertices; i++) {
-        result.mst[i] = NO_EDGE;
     }
 
     delete[] edge_pairs;
     return result;
 }
 
-
 // Alternative CPU Boruvka implementation for comparison
 MST boruvka_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
     MST result;
     result.weight = 0;
-    result.mst = new ullong[n_vertices];
+    result.mst = new char[n_edges];
+    
+    // Initialize all edges as not selected (0)
+    for (ullong i = 0; i < n_edges; i++) {
+        result.mst[i] = 0;
+    }
 
     UnionFind uf(n_vertices);
     std::vector<ullong> cheapest(n_vertices);
@@ -159,18 +164,14 @@ MST boruvka_mst_cpu(ullong n_vertices, ullong n_edges, Edge* edges) {
                 ullong u_comp = uf.find(edges[idx].u);
                 ullong v_comp = uf.find(edges[idx].v);
                 if (u_comp != v_comp && uf.unite(u_comp, v_comp)) {
-                    result.mst[mst_edges_added++] = idx;  // Store the edge index
+                    result.mst[idx] = 1; // Mark this edge as selected
                     result.weight += edges[idx].weight;
                     added_this_round.insert(idx);
                     components--;
+                    mst_edges_added++;
                 }
             }
         }
-    }
-
-    // Fill remaining slots with NO_EDGE if needed
-    for (ullong i = mst_edges_added; i < n_vertices; i++) {
-        result.mst[i] = NO_EDGE;
     }
 
     return result;
@@ -340,30 +341,28 @@ bool verifyMST(const std::vector<Edge>& edges, const MST& mst1, const MST& mst2,
 
     // Verify connectivity using Union-Find
     UnionFind uf1(n_vertices), uf2(n_vertices);
-    for (ullong i = 0; i < n_vertices; ++i) {
-        std::cout << "mst1.mst[i] " << mst1.mst[i] << std::endl; 
-        if (mst1.mst[i] == NO_EDGE) {
-            printf("NO EDGE");
-            continue;
+    
+    // Process MST1 - iterate through all edges
+    for (ullong i = 0; i < edges.size(); ++i) {
+        if (mst1.mst[i] == 1) {
+            const Edge& e = edges[i];
+            uf1.unite(e.u, e.v);
+            std::cout << name1 << " includes edge " << i << ": (" << e.u << "," << e.v << "," << e.weight << ")" << std::endl;
         }
-
-        const Edge& e = edges[mst1.mst[i]];
-        uf1.unite(e.u, e.v);
     }
-    for (ullong i = 0; i < n_vertices; ++i) {
-        std::cout << "mst2.mst[i] " << mst2.mst[i] << std::endl; 
-        if (mst2.mst[i] == NO_EDGE) {
-            printf("NO EDGE");
-            continue;
+    
+    // Process MST2 - iterate through all edges
+    for (ullong i = 0; i < edges.size(); ++i) {
+        if (mst2.mst[i] == 1) {
+            const Edge& e = edges[i];
+            uf2.unite(e.u, e.v);
+            std::cout << name2 << " includes edge " << i << ": (" << e.u << "," << e.v << "," << e.weight << ")" << std::endl;
         }
-
-        const Edge& e = edges[mst2.mst[i]];
-        uf2.unite(e.u, e.v);
     }
 
     // Check if all vertices are connected
     ullong root1 = uf1.find(0), root2 = uf2.find(0);
-    for (ullong i = 1; i < n_vertices - 1; i++) {
+    for (ullong i = 1; i < n_vertices; i++) {
         if (uf1.find(i) != root1 || uf2.find(i) != root2) {
             std::cout << "ERROR: MST is not connected!" << std::endl;
             return false;
@@ -422,12 +421,10 @@ void runTestSuite() {
         // Print MSTs
         auto print_mst = [&](const char* label, const MST& mst) {
             std::cout << label << " MST edges: [";
-            for (ullong i = 0; i < test_case.n_vertices; ++i) {
-                if (mst.mst[i] != NO_EDGE) {
-                    const Edge& e = edge_array[mst.mst[i]];
+            for (ullong i = 0; i < edges.size(); ++i) {
+                if (mst.mst[i] == 1) {
+                    const Edge& e = edge_array[i];
                     std::cout << "(" << e.u << "," << e.v << "," << e.weight << ") ";
-                } else {
-                    std::cout << "(" << " NO_EDGE "  << ") ";
                 }
             }
             std::cout << "]  weight: " << mst.weight << std::endl;
