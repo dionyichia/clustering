@@ -80,7 +80,7 @@ __global__ void update_mst();
 __global__ void update_mst_simple();
 
 // Add debug kernel to print device state
-__global__ void debug_print_state(const char* label, int max_print) {
+__global__ void debug_print_state(const char* label, int max_print=20) {
     return;
     
     if (threadIdx.x == 0 && blockIdx.x == 0) {

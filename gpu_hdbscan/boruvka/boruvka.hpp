@@ -32,11 +32,11 @@ using ullong = unsigned long long;
 #define NO_EDGE                   (ULONG_MAX)
 
 // Graph data structures
-struct __attribute__((packed)) Edge {
-    uint32_t u;    // endpoint index
-    uint32_t v;    // endpoint index
-    float    weight;
-};
+// struct __attribute__((packed)) Edge {
+//     uint32_t u;    // endpoint index
+//     uint32_t v;    // endpoint index
+//     float    weight;
+// };
 
 struct Vertex {
     ullong component;

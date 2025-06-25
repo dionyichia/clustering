@@ -546,23 +546,23 @@ std::pair<std::vector<Edge>, ullong> loadTestData(const std::string& filename) {
     return {edges, n_vertices};
 }
 
-int main() {
-    // Initialize GPU
-    extern void initGPUs();
-    initGPUs();
+// int main() {
+//     // Initialize GPU
+//     extern void initGPUs();
+//     initGPUs();
     
-    // Run tests
-    runTestSuite();
+//     // Run tests
+//     runTestSuite();
     
-    // Run performance benchmark
-    // runPerformanceBenchmark();
+//     // Run performance benchmark
+//     // runPerformanceBenchmark();
     
-    // Generate and save some test data
-    // auto large_graph = GraphGenerator::generateRandomGraph(50000, 250000);
-    // saveTestData("large_test_graph.txt", large_graph, 5000);
+//     // Generate and save some test data
+//     // auto large_graph = GraphGenerator::generateRandomGraph(50000, 250000);
+//     // saveTestData("large_test_graph.txt", large_graph, 5000);
     
-    // auto complete_graph = GraphGenerator::generateCompleteGraph(100);
-    // saveTestData("complete_test_graph.txt", complete_graph, 100);
+//     // auto complete_graph = GraphGenerator::generateCompleteGraph(100);
+//     // saveTestData("complete_test_graph.txt", complete_graph, 100);
     
-    return 0;
-}
+//     return 0;
+// }

@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
   */ 
 
   int numEdges = all_edges.size();
-  llong n_vertices = static_cast<ullong>(N);
+  ullong n_vertices = static_cast<ullong>(N);
   ullong n_edges = static_cast<ullong>(numEdges);
 
   std::cout << "\n=== Running Boruvka MST Algorithm ===" << std::endl;
@@ -232,15 +232,16 @@ int main(int argc, char** argv) {
     int mst_edge_count = 0;
     std::vector<Edge> mst_edges;
 
-    std::cout << "MST Edges:" << std::endl;
-    for (ullong i = 0; i < n_edges; ++i) {
-        if (result.mst[i] == 1) {
-            mst_edges.push_back(edge_array[i]);
-            std::cout << "Edge " << i << ": (" << edge_array[i].u << "," 
-                    << edge_array[i].v << ") weight=" << edge_array[i].weight << std::endl;
-            mst_edge_count++;
-        }
-    }
+    // Print all Edges take too long
+    // std::cout << "MST Edges:" << std::endl;
+    // for (ullong i = 0; i < n_edges; ++i) {
+    //     if (result.mst[i] == 1) {
+    //         mst_edges.push_back(edge_array[i]);
+    //         std::cout << "Edge " << i << ": (" << edge_array[i].u << "," 
+    //                 << edge_array[i].v << ") weight=" << edge_array[i].weight << std::endl;
+    //         mst_edge_count++;
+    //     }
+    // }
 
     std::cout << "Total MST edges: " << mst_edge_count << std::endl;
     std::cout << "Expected MST edges: " << n_vertices - 1 << std::endl;
