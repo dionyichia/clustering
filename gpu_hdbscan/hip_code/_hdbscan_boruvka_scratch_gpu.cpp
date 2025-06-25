@@ -34,7 +34,7 @@ struct __attribute__ ((packed)) Edge
 {
     uint u; // Vertice index will probably not exceed 4 billion
     uint v;
-    uint weight;
+    float weight;
 };
 
 struct Vertex {
@@ -44,7 +44,7 @@ struct Vertex {
 
 struct MST {
     char * mst; // Changed to only store selected edge indicies
-    ullong weight;
+    double weight;
 };
 
 // This stores the global constants
@@ -58,7 +58,7 @@ struct GlobalConstants {
 
 // Another global value
 __device__ ullong n_unions_total;
-__device__ ullong mst_weight_total;
+__device__ double mst_weight_total;
 
 // Global variable that is in scope, but read-only, for all hip
 // kernels.  The __constant__ modifier designates this variable will
@@ -85,7 +85,7 @@ __global__ void debug_print_state(const char* label, int max_print = 20) {
         printf("\n=== %s ===\n", label);
         printf("n_vertices: %llu, n_edges: %llu\n", 
                hipConstGraphParams.n_vertices, hipConstGraphParams.n_edges);
-        printf("n_unions_total: %llu, mst_weight_total: %llu\n", 
+        printf("n_unions_total: %llu, mst_weight_total: %.6f\n",  // Changed format
                n_unions_total, mst_weight_total);
         
         // Print first few vertices
@@ -96,19 +96,19 @@ __global__ void debug_print_state(const char* label, int max_print = 20) {
                    hipConstGraphParams.vertices[i].cheapest_edge);
         }
         
-        // Print first few edges
+        // Print first few edges - updated for float weights
         printf("Edges (first %d):\n", max_print);
         for (int i = 0; i < min(max_print, (int)hipConstGraphParams.n_edges); i++) {
-            printf("  e[%d]: u=%u, v=%u, weight=%u\n", 
+            printf("  e[%d]: u=%u, v=%u, weight=%.6f\n",  // Changed format
                    i, hipConstGraphParams.edges[i].u, 
                    hipConstGraphParams.edges[i].v, 
                    hipConstGraphParams.edges[i].weight);
         }
         
-        // Print MST array - now shows which edges are selected
+        // Print MST array - updated for float weights
         printf("MST array (first %d edges):\n", max_print);
         for (int i = 0; i < min(max_print, (int)hipConstGraphParams.n_edges); i++) {
-            printf("  mst[%d]: %s (edge: u=%u, v=%u, weight=%u)\n", 
+            printf("  mst[%d]: %s (edge: u=%u, v=%u, weight=%.6f)\n",  // Changed format
                    i, 
                    hipConstGraphParams.mst[i] == 1 ? "SELECTED" : "not selected",
                    hipConstGraphParams.edges[i].u,
@@ -116,12 +116,12 @@ __global__ void debug_print_state(const char* label, int max_print = 20) {
                    hipConstGraphParams.edges[i].weight);
         }
         
-        // Count and show selected edges
+        // Count and show selected edges - updated for float weights
         int selected_count = 0;
         printf("Selected MST edges:\n");
         for (int i = 0; i < min(max_print, (int)hipConstGraphParams.n_edges); i++) {
             if (hipConstGraphParams.mst[i] == 1) {
-                printf("  Edge %d: (%u,%u) weight=%u\n", 
+                printf("  Edge %d: (%u,%u) weight=%.6f\n",  // Changed format
                        i,
                        hipConstGraphParams.edges[i].u,
                        hipConstGraphParams.edges[i].v,
@@ -135,7 +135,7 @@ __global__ void debug_print_state(const char* label, int max_print = 20) {
 
 MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) {
     MST mst;
-    mst.weight = 0;
+    mst.weight = 0.0;
 
     // DEBUG 1: Print input validation
     printf("=== INPUT VALIDATION ===\n");
@@ -170,11 +170,11 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
     HIP_CHECK(hipMemcpyToSymbol(hipConstGraphParams, &params, sizeof(GlobalConstants)));
 
     ullong n_unions = 0;
-    ullong mst_weight = 0;
+    double mst_weight = 0.0;
     ullong n_unions_old;
 
     HIP_CHECK(hipMemcpyToSymbol(n_unions_total, &n_unions, sizeof(ullong)));
-    HIP_CHECK(hipMemcpyToSymbol(mst_weight_total, &mst_weight, sizeof(ullong)));
+    HIP_CHECK(hipMemcpyToSymbol(mst_weight_total, &mst_weight, sizeof(double)));
 
     // DEBUG 3: Check kernel launch parameters
     printf("=== KERNEL LAUNCH PARAMS ===\n");
@@ -222,9 +222,9 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
 
         // Copy back current state
         HIP_CHECK(hipMemcpyFromSymbol(&n_unions, n_unions_total, sizeof(ullong)));
-        HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(ullong)));
+        HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(double)));
 
-        printf("Iteration %d: n_unions_old=%llu, n_unions=%llu, mst_weight=%llu\n", 
+        printf("Iteration %d: n_unions_old=%llu, n_unions=%llu, mst_weight=%.6f\n", 
                iteration-1, n_unions_old, n_unions, mst_weight);
 
         // DEBUG 8: Prevent infinite loops
@@ -242,11 +242,11 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
     HIP_CHECK(hipDeviceSynchronize());
 
     HIP_CHECK(hipMemcpy(mst_tree, d_mst, sizeof(char) * n_edges, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(ullong)));
+    HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(double)));
 
     // DEBUG 10: Print final results
     printf("\n=== FINAL RESULTS ===\n");
-    printf("Final MST weight: %llu\n", mst_weight);
+    printf("Final MST weight: %.6f\n", mst_weight);
     printf("Final n_unions: %llu (expected: %llu)\n", n_unions, n_vertices - 1);
 
     mst.mst = mst_tree;
@@ -268,12 +268,23 @@ __device__ inline int edge_cmp(const Edge* edges, const ullong i, const ullong j
     const Edge& lhs = edges[i];
     const Edge& rhs = edges[j];
 
-    if (lhs.weight < rhs.weight) {
+    // Use epsilon for floating point comparison
+    const float epsilon = 1e-9f;
+    float weight_diff = lhs.weight - rhs.weight;
+
+    if (weight_diff < -epsilon) {
         return -1;
     }
-    else if (lhs.weight > rhs.weight) {
+    else if (weight_diff > epsilon) {
         return 1;
     }
+
+    // if (lhs.weight < rhs.weight) {
+    //     return -1;
+    // }
+    // else if (lhs.weight > rhs.weight) {
+    //     return 1;
+    // }
     // If same weight pick the one with smaller idx
     else if (i < j) {
         return -1;
@@ -507,7 +518,7 @@ __global__ void update_mst() {
     const ullong block_end = ((blockID + 1) * n_vertices) / NBLOCKS_OTHER;
 
     ullong n_unions_made = 0;
-    ullong batch_edge_weight = 0;
+    double batch_edge_weight = 0.0;
 
     // Connect newest edges to MST
     for (ullong i = block_start + threadIdx.x; i < block_end; i += block_width) {
@@ -564,7 +575,7 @@ __global__ void update_mst() {
         // no double counting as earlier condition would have skipped higher idx parent.
         merge_components(vertices, i, j);
         n_unions_made++;        
-        batch_edge_weight += edge_ptr.weight;
+        batch_edge_weight += (double) edge_ptr.weight;
     }
 
     atomicAdd(&mst_weight_total, batch_edge_weight);
@@ -618,7 +629,7 @@ __global__ void update_mst_simple() {
                 hipConstGraphParams.mst[i] = edge_ind;
                 
                 // Direct atomic updates (simpler but potentially slower)
-                atomicAdd(&mst_weight_total, (ullong)edge_ptr.weight);
+                atomicAdd(&mst_weight_total, (double)edge_ptr.weight);
                 atomicAdd(&n_unions_total, 1ULL);
             }
         }

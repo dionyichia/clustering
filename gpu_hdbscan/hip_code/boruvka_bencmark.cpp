@@ -11,8 +11,6 @@
 #include <functional>
 #include <climits> // for ULONG_MAX
 
-
-
 // Include your existing structs and constants
 typedef unsigned long long ullong;
 #define NO_EDGE (ULONG_MAX)
@@ -21,10 +19,10 @@ struct __attribute__ ((packed)) Edge
 {
     uint u;
     uint v;
-    uint weight;
+    float weight;
     
     // Constructor for convenience
-    Edge(uint _u = 0, uint _v = 0, uint _weight = 0) : u(_u), v(_v), weight(_weight) {}
+    Edge(uint _u = 0, uint _v = 0, float _weight = 0) : u(_u), v(_v), weight(_weight) {}
     
     // For sorting edges by weight
     bool operator<(const Edge& other) const {
@@ -36,7 +34,7 @@ struct __attribute__ ((packed)) Edge
 
 struct MST {
     char* mst; 
-    ullong weight;
+    double weight;
 };
 
 // Union-Find data structure for CPU implementation
@@ -183,11 +181,11 @@ class GraphGenerator {
 public:
     // Generate random graph
     static std::vector<Edge> generateRandomGraph(ullong n_vertices, ullong n_edges, 
-                                               uint min_weight = 1, uint max_weight = 1000,
+                                               float min_weight = 1.0f, float = 5.0f,
                                                uint seed = 42) {
         std::mt19937 gen(seed);
         std::uniform_int_distribution<uint> vertex_dist(0, n_vertices - 1);
-        std::uniform_int_distribution<uint> weight_dist(min_weight, max_weight);
+        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
         
         std::vector<Edge> edges;
         std::set<std::pair<uint, uint>> edge_set;
@@ -210,10 +208,10 @@ public:
     
     // Generate complete graph
     static std::vector<Edge> generateCompleteGraph(ullong n_vertices, 
-                                                 uint min_weight = 1, uint max_weight = 1000,
+                                                 float min_weight = 1.0f, float = 5.0f,
                                                  uint seed = 42) {
         std::mt19937 gen(seed);
-        std::uniform_int_distribution<uint> weight_dist(min_weight, max_weight);
+        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
         
         std::vector<Edge> edges;
         for (uint u = 0; u < n_vertices; u++) {
@@ -227,10 +225,10 @@ public:
     
     // Generate grid graph
     static std::vector<Edge> generateGridGraph(ullong width, ullong height,
-                                             uint min_weight = 1, uint max_weight = 1000,
+                                             float min_weight = 1.0f, float = 5.0f,
                                              uint seed = 42) {
         std::mt19937 gen(seed);
-        std::uniform_int_distribution<uint> weight_dist(min_weight, max_weight);
+        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
         
         std::vector<Edge> edges;
         
@@ -257,11 +255,11 @@ public:
     
     // Generate sparse graph (tree + some extra edges)
     static std::vector<Edge> generateSparseGraph(ullong n_vertices, double density = 0.1,
-                                                uint min_weight = 1, uint max_weight = 1000,
+                                                float min_weight = 1.0f, float = 5.0f,
                                                 uint seed = 42) {
         std::mt19937 gen(seed);
         std::uniform_int_distribution<uint> vertex_dist(0, n_vertices - 1);
-        std::uniform_int_distribution<uint> weight_dist(min_weight, max_weight);
+        std::uniform_int_distribution<float> weight_dist(min_weight, max_weight);
         std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
         
         std::vector<Edge> edges;
