@@ -132,7 +132,10 @@ int main(int argc, char** argv) {
   int N = points.size();
   std::vector<std::vector<std::pair<int,double>>> knn_graph(points.size());
   std::vector<double> core_dist(points.size());
-
+  std::vector<int> pointIndexes(points.size());
+  for (int i = 0; i < (int)points.size(); ++i){
+        pointIndexes.push_back(static_cast<int>(i));
+    }
   auto root = buildKDTree(points);
 
   for (int i = 0; i < N; ++i) {
@@ -179,5 +182,11 @@ int main(int argc, char** argv) {
   std::sort(all_edges.begin(), all_edges.end()); // Uses your Edge::operator
   std::cout << "Total edges: " << all_edges.size() << std::endl;
   printFirstNEdges(all_edges);
+  int numEdges = all_edges.size()
+  /* 
+     all_edges = flattened array of k*N edges
+     pointIndexes = array of indices of points
+     numEdges = size of edges
+  */ 
 }
 
