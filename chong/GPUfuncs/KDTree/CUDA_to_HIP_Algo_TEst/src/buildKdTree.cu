@@ -1,5 +1,5 @@
 //
-//  buildKdTree.cu
+//  buildTree.cu
 //
 //  Created by John Robinson on 7/15/15.
 //  Copyright (c) 2015 John Robinson. All rights reserved.
@@ -46,9 +46,11 @@ using std::setprecision;
 using namespace std;
 #include <assert.h>
 #include <hip/hip_runtime.h>
-#include <cmath>
+// for warp‐shuffle & ballot intrinsics (if needed)
+
 #include "buildKdTree_common.h"
 #include "Gpu.h"
+#include "HipErrorCheck.h"
 
 
 __device__ sint superKeyCompareB(const KdCoord *a, const KdCoord *b, const sint p, const sint dim)
@@ -232,8 +234,8 @@ __global__ void cuPartitionRemoveGaps(refIdx_t refoutx[], refIdx_t refinxLT[], r
 		segSize = segLengthsLT[warpIndex];
 	}
 	// Copy to the other threads in the warp.
-	segStartOut = __shfl(segStartOut, 0);
-	segSize = __shfl(segSize, 0);
+	segStartOut       = __shfl(segStartOut, 0);
+	segSize       =  __shfl(segSize, 0);
 	// and do the copy.
 	cuWarpCopyRef(refoutx+segStartOut, refinxLT+segStart, segSize, partSize);
 	// Check to see that the partitioned data did not exceed it's half of the output array.
@@ -250,8 +252,8 @@ __global__ void cuPartitionRemoveGaps(refIdx_t refoutx[], refIdx_t refinxLT[], r
 		segSize = segLengthsGT[warpIndex];
 	}
 	// Copy to the other threads in the warp.
-	segStartOut = __shfl(segStartOut, 0);
-	segSize = __shfl(segSize, 0);
+	segStartOut       = __shfl(segStartOut, 0);
+	segSize       = __shfl(segSize, 0);
 	// and do the copy.+
 	cuWarpCopyRef(refoutx+segStartOut, refinxGT+segStart, segSize, partSize);
 
@@ -298,8 +300,8 @@ __device__ sint d_partitionError;
 #define PART_SIZE_GT_SUB_PART_SIZE -1
 #define PART_FINISH_DELTA_TOO_LARGE -2
 
-__device__ void cuSmallPartition( const KdCoord *__restrict__ coords,
-		refIdx_t refoutxLT[], refIdx_t refoutxGT[], refIdx_t refinx[],
+__device__ void cuSmallPartition( const KdCoord* __restrict__ coords,
+		refIdx_t* __restrict__  refoutxLT, refIdx_t* __restrict__  refoutxGT, refIdx_t* __restrict__  refinx,
 		const refIdx_t divRef, const sint p, const sint dim, uint segSizex,
 		const uint subWarpSize)
 {
@@ -354,10 +356,10 @@ __device__ void cuSmallPartition( const KdCoord *__restrict__ coords,
 
 }
 
-__global__ void cuPartitionShort( KdNode kdNodes[], const KdCoord * __restrict__ coords,
-		refIdx_t refoutx[], refIdx_t refinx[], refIdx_t refp[],
+__global__ void cuPartitionShort( KdNode kdNodes[], const KdCoord* __restrict__  coords,
+		refIdx_t* __restrict__ refoutx, refIdx_t* __restrict__  refinx, refIdx_t* __restrict__ refp,
 		const sint p, const sint dim,
-		refIdx_t midRefs[], refIdx_t lastMidRefs[],
+		refIdx_t* midRefs, refIdx_t* lastMidRefs,
 		sint startIn, sint endIn,
 		const sint level, const sint logNumSubWarps, const sint logSubWarpSize)
 {
@@ -424,8 +426,8 @@ __global__ void cuPartitionShort( KdNode kdNodes[], const KdCoord * __restrict__
 	}
 }
 
-__device__ void cuSinglePartition( const KdCoord * __restrict__ coords, refIdx_t refoutxLT[], refIdx_t refoutxGT[], refIdx_t refinx[],
-		const refIdx_t divRef, const sint p, const sint dim, uint segSizex, uint segLengthsLT[], uint segLengthsGT[],
+__device__ void cuSinglePartition( const KdCoord* coords, refIdx_t* refoutxLT, refIdx_t* refoutxGT, refIdx_t* refinx,
+		const refIdx_t divRef, const sint p, const sint dim, uint segSizex, uint* segLengthsLT, uint* segLengthsGT,
 		const sint numTuples, uint warpGroupSize)
 {
 	uint pos = (blockIdx.x * blockDim.x + threadIdx.x);
@@ -522,10 +524,10 @@ __device__ void cuSinglePartition( const KdCoord * __restrict__ coords, refIdx_t
 	if (thrdIdx == 0 && segLengthsGT != NULL) segLengthsGT[warpIndex] = outCntGT;
 }
 
-__global__ void cuPartitionLWTP( KdNode kdNodes[], const KdCoord * __restrict__ coords,
-		refIdx_t refoutx[], refIdx_t refinx[], refIdx_t refp[],
+__global__ void cuPartitionLWTP( KdNode* kdNodes, const KdCoord* coords,
+		refIdx_t* refoutx, refIdx_t* refinx, refIdx_t* refp,
 		const sint p, const sint dim,
-		refIdx_t midRefs[], refIdx_t lastMidRefs[],
+		refIdx_t* midRefs, refIdx_t* lastMidRefs,
 		sint startIn, sint endIn, const sint level, const sint logNumWarps)
 {
 	uint pos = (blockIdx.x * blockDim.x + threadIdx.x); // This thread's position in all threads
@@ -594,12 +596,12 @@ __global__ void cuPartitionLWTP( KdNode kdNodes[], const KdCoord * __restrict__ 
 	}
 }
 
-__global__ void cuPartition( KdNode kdNodes[], const KdCoord * __restrict__ coords,
-		refIdx_t refoutxLT[], refIdx_t refoutxGT[],
-		refIdx_t refinx[], refIdx_t refp[],
+__global__ void cuPartition( KdNode* kdNodes, const KdCoord* coords,
+		refIdx_t* refoutxLT, refIdx_t* refoutxGT,
+		refIdx_t* refinx, refIdx_t* refp,
 		const sint p, const sint dim,
-		uint segLengthsLT[], uint segLengthsGT[],
-		refIdx_t midRefs[], refIdx_t lastMidRefs[],
+		uint* segLengthsLT, uint* segLengthsGT,
+		refIdx_t* midRefs, refIdx_t* lastMidRefs,
 		const sint startIn, const sint endIn, const sint level)
 {
 	uint pos = (blockIdx.x * blockDim.x + threadIdx.x);
@@ -695,7 +697,7 @@ __global__ void cuPartitionLast(KdNode kdNodes[], refIdx_t refp[], refIdx_t midR
 }
 
 void Gpu::initBuildKdTree() {
-	uint numWarps = numBlocks*numThreads/warpSize;
+	uint numWarps = numBlocks*numThreads/32;
 #pragma omp critical (launchLock)
 	{
 		setDevice();
@@ -725,7 +727,7 @@ void Gpu::closeBuildKdTree() {
 void Gpu::partitionDim(KdNode d_kdNodes[], const KdCoord d_coords[], refIdx_t* l_references[],
 		const sint p, const sint dim, const sint numTuples, const sint level, const sint numThreads) {
 
-	uint numWarps = numThreads/warpSize;
+	uint numWarps = numThreads/32;
 	uint logNumWarps = (uint)log2((float)numWarps);
 	uint logNumTuples = (uint)ceil(log2((float)numTuples));
 	// This portion sets up the tread and block size to work with small numbers of thread

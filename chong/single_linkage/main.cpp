@@ -36,66 +36,6 @@ void collect_members(int c,
 
 */
 int main(){
-    // int min_cluster_size = 5;
-    // if (min_cluster_size){
-    //     min_cluster_size = min_cluster_size;
-    // }
-    // else{
-    //     min_cluster_size = minpts
-    // } 
-    // // TESTING, REMOVE LATER
-    // std::vector<Edge> mst_edges = {
-    //     {1, 81, 0.663f},
-    //     {2, 14, 0.879f},
-    //     {6, 3, 1.490f},
-    //     {7, 94, 1.140f},
-    //     {14, 35, 1.057f},
-    //     {16, 31, 1.185f},
-    //     {18, 28, 1.343f},
-    //     {22, 17, 1.276f},
-    //     {17, 94, 0.729f},
-    //     {23, 13, 0.532f},
-    //     {30, 86, 0.815f},
-    //     {32, 94, 0.768f},
-    //     {36, 69, 0.711f},
-    //     {38, 11, 1.443f},
-    //     {39, 75, 1.376f},
-    //     {40, 54, 0.815f},
-    //     {42, 55, 1.265f},
-    //     {46, 16, 0.793f},
-    //     {48, 50, 0.531f},
-    //     {51, 9, 1.462f},
-    //     {54, 82, 1.069f},
-    //     {56, 8, 1.188f},
-    //     {59, 96, 0.741f},
-    //     {60, 66, 0.999f},
-    //     {63, 18, 0.880f},
-    //     {64, 58, 1.296f},
-    //     {67, 44, 0.514f},
-    //     {69, 73, 1.129f},
-    //     {70, 65, 0.668f},
-    //     {72, 83, 0.902f},
-    //     {74, 40, 0.858f},
-    //     {76, 84, 0.528f},
-    //     {78, 2,  1.245f},
-    //     {80, 97, 1.213f},
-    //     {83, 6,  0.951f},
-    //     {85, 15, 0.568f},
-    //     {87, 53, 0.965f},
-    //     {89, 91, 1.328f},
-    //     {90, 58, 1.496f},
-    //     {92, 20, 0.555f},
-    //     {94, 29, 1.386f},
-    //     {96, 43, 0.597f},
-    //     {98, 27, 1.428f},
-    //     {100, 32,1.194f},
-    // };
-    // int N_pts = 100;
-    // int min_cluster_size = 2;
-    /* 
-        COPY OUTPUT FROM BORUVKA INTO GPU AND RUN THRUST SORT, SHOULD BE FASTER
-        BUT WILL INCUR COPY FROM HOST TO DEVICE COST
-    */
     // assume `mst_edges` is your input vector<Edge> of size N–1
     std::sort(mst_edges.begin(), mst_edges.end(),
                 [] (const Edge &a, const Edge &b) { return a.mrd < b.mrd; });

@@ -38,8 +38,8 @@
  * http://www.cse.chalmers.se/~uffe/streamcompaction.pdf
  */
 
-#include <cstdio>
-#include <cstdlib>
+#include <stdio.h>
+#include <stdlib.h>
 #include <iostream>
 #include <iomanip>
 using std::setprecision;
@@ -49,7 +49,7 @@ using namespace std;
 
 #include "Gpu.h"
 #include "removeDups_common.h"
-
+#include "HipErrorCheck.h"
 
 __device__ sint superKeyCompareFirstDimSmplA(const KdCoord ap, const KdCoord bp, const KdCoord *a, const KdCoord *b, const sint p, const sint dim)
 {

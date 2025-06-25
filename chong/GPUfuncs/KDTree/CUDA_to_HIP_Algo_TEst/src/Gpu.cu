@@ -34,22 +34,22 @@
 //
 
 /********************************************************************************
-/* DBUG defines
-/********************************************************************************/
+ * DBUG defines
+ ********************************************************************************/
 
 //#define FAKE_TWO // runs the Multi-GPU code on a single GPU
 
 #include <limits>
+#include <hip/hip_runtime.h>
 #include <omp.h>
 
 // includes, project
-#include <hip/hip_runtime.h>
-// #include <helper_functions.h>  // Helper for shared that are common to hip Samples
 
 #include "Gpu.h"
 #include "mergeSort_common.h"
 #include "removeDups_common.h"
 #include "buildKdTree_common.h"
+#include "HipErrorCheck.h"
 
 sint Gpu::numGPUs = 0;
 Gpu* Gpu::gpus[MAX_GPUS] = {NULL};
@@ -591,7 +591,7 @@ void Gpu::mergeSort(sint end[], const sint numTuples, const sint dim){
 #pragma omp parallel for
 		for (int gpuCnt = 0;  gpuCnt<numGPUs; gpuCnt++){
 			gpus[gpuCnt]->num = gpuEnds[gpuCnt][0] = 
-					gpus[gpuCnt]->removeDuplicatesGPU(0, NperG, 0, 0, 0, dim, getGPU(gpuCnt-1), NperG);
+					gpus[gpuCnt]->removeDuplicatesGPU(0, NperG, 0, dim, 0, dim, getGPU(gpuCnt-1), NperG);
 			// If some duplicates were remove the fill the empty locations with reference to max tuple value
 			if (gpus[gpuCnt]->num != NperG)
 				gpus[gpuCnt]->fillMemGPU(gpus[gpuCnt]->d_references[dim]+gpus[gpuCnt]->num, NperG, NperG-gpus[gpuCnt]->num);
@@ -612,7 +612,7 @@ void Gpu::mergeSort(sint end[], const sint numTuples, const sint dim){
 				// Copy the references from p=0 to p=1..dim, sort and remove duplicates
 				gpus[gpuCnt]->copyRefGPU(0, NperG, 0, p);
 				gpus[gpuCnt]->mergeSortRangeGPU(0, NperG, p, dim, p, dim);
-				gpuEnds[gpuCnt][p] = gpus[gpuCnt]->removeDuplicatesGPU(0, NperG, p, p, p, dim);
+				gpuEnds[gpuCnt][p] = gpus[gpuCnt]->removeDuplicatesGPU(0, NperG, dim, p, p, dim);
 			}
 		}
 		for (int i=0;  i<dim; i++) {
@@ -1073,7 +1073,7 @@ void Gpu::getKdTreeResults(KdNode kdNodes[], KdCoord coord[], const sint numTupl
 }
 
 
-inline bool IsGPUCapableP2P(hipDeviceProp_t *pProp)
+inline bool IsGPUCapableP2P(hipDeviceProp_t* pProp)
 {
 #ifdef _WIN32
 	return (bool)(pProp->tccDriver ? true : false);
@@ -1121,7 +1121,6 @@ void Gpu::gpuSetup(int gpu_max, int threads, int blocks, int dim){
 	if (gpu_count >= 2) {
 		// Check possibility for peer access
 		printf("\nChecking GPU(s) for support of peer to peer memory access...\n");
-		int uva0 = 0, uva1 = 0;
 		int can_access_peer_0_1, can_access_peer_1_0;
 		// In this case we just pick the first two that we can support
 		HIP_CHECK(hipDeviceCanAccessPeer(&can_access_peer_0_1, gpuid[0], gpuid[1]));
@@ -1148,28 +1147,32 @@ void Gpu::gpuSetup(int gpu_max, int threads, int blocks, int dim){
 			HIP_CHECK(hipDeviceEnablePeerAccess(gpuid[0], 0));
 			// Check that we got UVA on both devices
 			printf("Checking GPU%d and GPU%d for UVA capabilities...\n", gpuid[0], gpuid[1]);
+	        // Check that we got UVA on both devices via hipDeviceGetAttribute
+			int managed0 = 0, managed1 = 0;
 
-			#ifdef hipDeviceAttributeUnifiedAddressing
-				HIP_CHECK( hipDeviceGetAttribute(&uva0,
-					hipDeviceAttributeUnifiedAddressing, gpuid[0]) );
-				HIP_CHECK( hipDeviceGetAttribute(&uva1,
-					hipDeviceAttributeUnifiedAddressing, gpuid[1]) );
-			#else
-				// Older HIP doesn’t expose this attribute → assume not supported
-				uva0 = uva1 = 0;
-			#endif
-			bool has_uva = (uva0 && uva1);
+			// make sure hip knows which devices we’re querying
+			HIP_CHECK( hipSetDevice(gpuid[0]) );
+			HIP_CHECK( hipDeviceGetAttribute(&managed0,
+											hipDeviceAttributeManagedMemory,
+											gpuid[0]) );
 
-			printf("> %s (GPU%d) supports UVA: %s\n",
-				prop[gpuid[0]].name, gpuid[0],
-				uva0 ? "Yes" : "No");
-			printf("> %s (GPU%d) supports UVA: %s\n",
-				prop[gpuid[1]].name, gpuid[1],
-				uva1 ? "Yes" : "No");
+			HIP_CHECK( hipSetDevice(gpuid[1]) );
+			HIP_CHECK( hipDeviceGetAttribute(&managed1,
+											hipDeviceAttributeManagedMemory,
+											gpuid[1]) );
 
-			if (has_uva) {
+			// if both devices support hipMallocManaged (i.e. “managed memory”) we treat
+			// that exactly like CUDA’s unifiedAddressing
+			bool has_uva = (managed0 && managed1);
+			printf("> %s (GPU%d) supports UVA: %s\n",prop[gpuid[0]].name, gpuid[0],(managed0 ? "Yes" : "No"));
+			printf("> %s (GPU%d) supports UVA: %s\n",prop[gpuid[1]].name, gpuid[1],(managed1 ? "Yes" : "No"));
+
+			if (has_uva)
+			{
 				printf("Both GPUs can support UVA, enabling...\n");
-			} else {
+			}
+			else
+			{
 				printf("At least one of the two GPUs does NOT support UVA.\n");
 				gpu_n = 1;
 			}

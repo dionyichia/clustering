@@ -21,7 +21,7 @@ struct __attribute__ ((packed)) Edge
 {
     uint u;
     uint v;
-    uint weight;
+    float weight;
     
     // Constructor for convenience
     Edge(uint _u = 0, uint _v = 0, uint _weight = 0) : u(_u), v(_v), weight(_weight) {}

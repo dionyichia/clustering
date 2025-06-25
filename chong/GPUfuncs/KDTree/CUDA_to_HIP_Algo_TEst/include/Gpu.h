@@ -36,17 +36,15 @@
 #define gpu_Gpu_h
 
 #include <iostream>
-#include <cstdio>
-#include <cstdlib>
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
-#include <hip/hip_runtime.h>
 
 
 using namespace std;
 
 #include "KdNode.h"
-#include "buildKdTree_common.h"
-
+#include "HipErrorCheck.h"
 class Gpu {
 	// Gpu class constants;
 	static const uint MAX_THREADS = 1024;
@@ -68,8 +66,7 @@ private:
 
 public:
 	// These are the API methods used outside the class.  They hide any details about the GPUs from the main program.
-	static refIdx_t** getReferenceArrays() {return d_references;};
-	static sint     getNumGPUs() {return numGPUs;};
+	static sint     getNumGPUs() {return numGPUs;}
 	static void     gpuSetup(int gpu_max, int threads, int blocks, int dim); // GPU discovery and multiple GPU static variable setup.
 	static void     initializeKdNodesArray(KdCoord coordinates[], const sint numTuples, const sint dim);
 	static void     mergeSort(sint end[], const sint numTuples, const sint dim);
@@ -94,9 +91,9 @@ public:
 			return (gpus[0]->numBlocks);
 		}
 	}
-
+	int getDeviceId() const { return devID; }
 	// Device specific variables
-public:
+private:
 	sint 		numThreads; 	// Constant value holding the number of threads
 	sint 		numBlocks; 		// Constant value holding the number of blocks
 	sint 		devID; 			// The GPU device we are talking to.

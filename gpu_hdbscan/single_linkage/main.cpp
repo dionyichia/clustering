@@ -5,7 +5,22 @@
 #include <limits>
 #include <functional>
 
-struct Edge { int u, v; float mrd; };
+struct __attribute__ ((packed)) Edge
+{
+    uint u;
+    uint v;
+    float weight;
+    
+    // Constructor for convenience
+    Edge(uint _u = 0, uint _v = 0, float _weight = 0) : u(_u), v(_v), weight(_weight) {}
+    
+    // For sorting edges by weight
+    bool operator<(const Edge& other) const {
+        if (weight != other.weight) return weight < other.weight;
+        if (u != other.u) return u < other.u;
+        return v < other.v;
+    }
+};
 
 // Recursively gather all original points under cluster `c`.
 void collect_members(int c,
@@ -98,14 +113,14 @@ int main(){
     */
     // assume `mst_edges` is your input vector<Edge> of size N–1
     std::sort(mst_edges.begin(), mst_edges.end(),
-                [] (const Edge &a, const Edge &b) { return a.mrd < b.mrd; });
+                [] (const Edge &a, const Edge &b) { return a.weight < b.weight; });
 
     // After sorting:
     assert(!mst_edges.empty());
     for (auto &e : mst_edges) {
         assert(e.u >= 0 && e.u < N_pts);
         assert(e.v >= 0 && e.v < N_pts);
-        assert(e.mrd > 0);
+        assert(e.weight > 0);
     }
     
     // int N_pts = /* number of points */;
@@ -115,16 +130,16 @@ int main(){
     std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
     
     // 2. Guard against zero‐length edges (just in case)
-    float smallest_mrd = mst_edges.front().mrd;
-    if (smallest_mrd <= 0.f) {
+    float smallest_weight = mst_edges.front().weight;
+    if (smallest_weight <= 0.f) {
         // handle degenerate case (e.g. set to a tiny epsilon)
-        smallest_mrd = std::numeric_limits<float>::min();
+        smallest_weight = std::numeric_limits<float>::min();
     }
 
     /* Compute lambda_max as the inverse of smallest_mrd. 
        Prevents Singleton Clusters from being most stable.
     */
-    float lambda_max = 1.f / smallest_mrd;
+    float lambda_max = 1.f / smallest_weight;
     /* initialise all points as singleton clusters 
        singleton clusters have cluster ids within [0,N_pts-1]
     */
@@ -165,7 +180,7 @@ int main(){
         }
 
         // else make new cluster
-        float lambda = 1.f / e.mrd;
+        float lambda = 1.f / e.weight;
         // record death of c1, c2
         death_lambda[c1] = lambda;
         death_lambda[c2] = lambda;

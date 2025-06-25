@@ -63,32 +63,19 @@
  *  by Oded Green, Robert McColl, David A. Bader
  ∗ http://www.cc.gatech.edu/~bader/papers/GPUMergePath-ICS2012.pdf
  */
-#ifndef umin
-#define umin(a,b) (((a) < (b)) ? (a) : (b))
-#endif
 
 #include <assert.h>
 #include <omp.h>
 #include "Gpu.h"
 #include "mergeSort_common.h"
 #include <hip/hip_runtime.h>
-#include <cstdlib>
-#include <cstdio>
-#include <cmath>
-
-
+#include "HipErrorCheck.h"
+#ifndef umin
+#define umin(a,b) (((a)<(b)) ? (a) : (b))
+#endif
 ////////////////////////////////////////////////////////////////////////////////
 // Helper functions
 ////////////////////////////////////////////////////////////////////////////////
-static inline void getLastHipError(const char *msg) {
-    hipError_t err = hipGetLastError();
-    if (err != hipSuccess) {
-        fprintf(stderr, "Fatal: %s (%s at %s:%d)\n",
-                msg, hipGetErrorString(err), __FILE__, __LINE__);
-        exit(EXIT_FAILURE);
-    }
-}
-
 static inline __host__ __device__ uint iDivUp(uint a, uint b)
 {
 	return ((a % b) == 0) ? (a / b) : (a / b + 1);
@@ -328,21 +315,35 @@ void Gpu::mergeSortShared(
 	uint  blockCount = batchSize * arrayLength / SHARED_SIZE_LIMIT;
 	uint threadCount = SHARED_SIZE_LIMIT / 2;
 
-#pragma omp critical (launchLock)
-{
-		setDevice();
-		if (sortDir)
-		{
-			mergeSortSharedKernel<1U><<<blockCount, threadCount, 0, stream>>>(d_coords, d_DstVal, d_DstRef, d_SrcVal, d_SrcRef, arrayLength, p, dim);
-			getLastHipError("mergeSortShared<1><<<>>> failed\n");
-		}
-		else
-		{
-			mergeSortSharedKernel<0U><<<blockCount, threadCount, 0, stream>>>(d_coords, d_DstVal, d_DstRef, d_SrcVal, d_SrcRef, arrayLength, p, dim);
-			getLastHipError("mergeSortShared<0><<<>>> failed\n");
-		}
+#pragma omp critical (launchLock) {
+    // switch to the right device
+    setDevice();
+
+    if (sortDir) {
+        // launch the “1U” instantiation
+        hipLaunchKernelGGL(
+            (mergeSortSharedKernel<1U>),
+            dim3(blockCount), dim3(threadCount),
+            /*sharedMem=*/0, stream,
+            d_coords, d_DstVal, d_DstRef,
+            d_SrcVal, d_SrcRef,
+            arrayLength, p, dim
+        );
+        HIP_CHECK( hipGetLastError() );
+    } else {
+        // launch the “0U” instantiation
+        hipLaunchKernelGGL(
+            (mergeSortSharedKernel<0U>),
+            dim3(blockCount), dim3(threadCount),
+            /*sharedMem=*/0, stream,
+            d_coords, d_DstVal, d_DstRef,
+            d_SrcVal, d_SrcRef,
+            arrayLength, p, dim
+        );
+        HIP_CHECK( hipGetLastError() );
+    }
 }
-}
+
 
 
 
@@ -418,21 +419,39 @@ void Gpu::generateSampleRanks(
 	uint lastSegmentElements = N % (2 * stride);
 	uint         threadCount = (lastSegmentElements > stride) ? (N + 2 * stride - lastSegmentElements) / (2 * SAMPLE_STRIDE) : (N - lastSegmentElements) / (2 * SAMPLE_STRIDE);
 
-#pragma omp critical (launchLock)
-	{
-		setDevice();
-		if (sortDir)
-		{
-			generateSampleRanksKernel<1U><<<iDivUp(threadCount, 256), 256, 0, stream>>>(d_coords, d_RanksA, d_RanksB, d_SrcVal, d_SrcRef, stride, N, threadCount, p, dim);
-			getLastHipError("generateSampleRanksKernel<1U><<<>>> failed\n");
-		}
-		else
-		{
-			generateSampleRanksKernel<0U><<<iDivUp(threadCount, 256), 256, 0, stream>>>(d_coords, d_RanksA, d_RanksB, d_SrcVal, d_SrcRef, stride, N, threadCount, p, dim);
-			getLastHipError("generateSampleRanksKernel<0U><<<>>> failed\n");
-		}
-	}
+#pragma omp critical (launchLock) {
+    // switch to the right GPU (this->deviceId is set in your Gpu ctor)
+    setDevice();
+
+    // compute grid size
+    uint grid = iDivUp(threadCount, 256);
+    uint block = 256;
+
+    if (sortDir) {
+        // launch the “1U” instantiation
+        hipLaunchKernelGGL(
+            (generateSampleRanksKernel<1U>),
+            dim3(grid), dim3(block), 0, stream,
+            d_coords, d_RanksA, d_RanksB,
+            d_SrcVal, d_SrcRef,
+            stride, N, threadCount,
+            p, dim
+        );
+        HIP_CHECK( hipGetLastError() );
+    } else {
+        // launch the “0U” instantiation
+        hipLaunchKernelGGL(
+            (generateSampleRanksKernel<0U>),
+            dim3(grid), dim3(block), 0, stream,
+            d_coords, d_RanksA, d_RanksB,
+            d_SrcVal, d_SrcRef,
+            stride, N, threadCount,
+            p, dim
+        );
+        HIP_CHECK( hipGetLastError() );
+    }
 }
+
 
 
 
@@ -499,7 +518,11 @@ void Gpu::mergeRanksAndIndices(
 				N,
 				threadCount
 		);
-		getLastHipError("mergeRanksAndIndicesKernel(A)<<<>>> failed\n");
+		auto err = hipGetLastError();
+		if(err != hipSuccess){
+		fprintf(stderr, "mergeRanksAndIndicesKernel(A)<<<>>> failed %s\n", hipGetErrorString(err));
+		std::exit(EXIT_FAILURE);
+		}
 	}
 
 #pragma omp critical (launchLock)
@@ -512,7 +535,11 @@ void Gpu::mergeRanksAndIndices(
 				N,
 				threadCount
 		);
-		getLastHipError("mergeRanksAndIndicesKernel(B)<<<>>> failed\n");
+		auto err = hipGetLastError();
+		if(err != hipSuccess){
+		fprintf(stderr, "mergeRanksAndIndicesKernel(B)<<<>>> failed %s\n", hipGetErrorString(err));
+		std::exit(EXIT_FAILURE);
+		}
 	}
 }
 
@@ -697,7 +724,11 @@ void Gpu::mergeElementaryInterRefs(
 					stride,
 					N, p, dim
 			);
-			getLastHipError("mergeElementaryInterRefsKernel<1> failed\n");
+			auto err = hipGetLastError();
+			if(err != hipSuccess){
+			fprintf(stderr, "mergeElementaryInterRefsKernel<1> failed %s\n", hipGetErrorString(err));
+			std::exit(EXIT_FAILURE);
+			}
 		}
 		else
 		{
@@ -712,7 +743,11 @@ void Gpu::mergeElementaryInterRefs(
 					stride,
 					N, p, dim
 			);
-			getLastHipError("mergeElementaryInterRefsKernel<0> failed\n");
+			auto err = hipGetLastError();
+			if(err != hipSuccess){
+			fprintf(stderr, "mergeElementaryInterRefsKernel<0> failed %s\n", hipGetErrorString(err));
+			std::exit(EXIT_FAILURE);
+			}
 		}
 	}
 }

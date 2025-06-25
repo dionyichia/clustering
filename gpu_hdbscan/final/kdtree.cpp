@@ -15,6 +15,23 @@
 using Point = std::vector<double>;
 using PI     = std::pair<Point,int>;
 
+struct __attribute__ ((packed)) Edge
+{
+    uint u;
+    uint v;
+    float weight;
+    
+    // Constructor for convenience
+    Edge(uint _u = 0, uint _v = 0, uint _weight = 0) : u(_u), v(_v), weight(_weight) {}
+    
+    // For sorting edges by weight
+    bool operator<(const Edge& other) const {
+        if (weight != other.weight) return weight < other.weight;
+        if (u != other.u) return u < other.u;
+        return v < other.v;
+    }
+};
+
 struct KDNode {
   Point             point;   // was array<double,2>, now vector
   int               axis;    // will be set in [0…D−1]
