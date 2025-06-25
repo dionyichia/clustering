@@ -217,3 +217,41 @@ void printAndVerifyMutualReachability(
     }
 }
 
+std::vector<Edge> flatten(const std::vector<std::vector<std::pair<int,double>>>& knn_graph) {
+    std::vector<Edge> edges;
+    
+    // Calculate total number of edges (k * N)
+    size_t total_edges = 0;
+    for (const auto& neighbors : knn_graph) {
+        total_edges += neighbors.size();
+    }
+    edges.reserve(total_edges);
+    
+    // Iterate through each point and its neighbors
+    for (uint i = 0; i < knn_graph.size(); ++i) {
+        for (const auto& neighbor : knn_graph[i]) {
+            uint neighbor_idx = static_cast<uint>(neighbor.first);
+            float mrd = static_cast<float>(neighbor.second);
+            
+            // Create edge from point i to its neighbor
+            edges.emplace_back(i, neighbor_idx, mrd);
+        }
+    }
+    
+    return edges;
+}
+
+void printFirstNEdges(const std::vector<Edge>& edges, int n) {
+    std::cout << "\n=== First " << n << " Edges ===\n";
+    std::cout << "Format: (u -> v, weight)\n";
+    std::cout << "------------------------\n";
+    
+    int limit = std::min(n, static_cast<int>(edges.size()));
+    for (int i = 0; i < limit; ++i) {
+        const Edge& e = edges[i];
+        std::cout << "Edge " << i << ": (" 
+                  << e.u << " -> " << e.v << ", " 
+                  << e.weight << ")\n";
+    }
+    std::cout << "========================\n\n";
+}
