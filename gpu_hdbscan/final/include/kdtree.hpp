@@ -55,3 +55,21 @@ void printAndVerifyMutualReachability(
   DistanceMetric metric,
   float p = 2.0f
 );
+
+/**
+ * Flatten the k-NN graph into a vector of Edge structs.
+ * Each point i has k neighbors, so we get k*N total edges.
+ * 
+ * @param knn_graph: Vector where knn_graph[i] contains k nearest neighbors of point i
+ *                   as pairs of (neighbor_index, mutual_reachability_distance)
+ * @return: Vector of Edge structs, each containing (u, v, weight) where:
+ *          - u is the source point index
+ *          - v is the neighbor point index  
+ *          - weight is the mutual reachability distance
+ */
+std::vector<Edge> flatten(const std::vector<std::vector<std::pair<int,double>>>& knn_graph);
+
+/**
+ * Print only the first N edges for quick inspection
+ */
+void printFirstNEdges(const std::vector<Edge>& edges, int n = 10) ;

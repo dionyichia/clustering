@@ -1,0 +1,6 @@
+Checking for multiple GPUs...
+hip-capable device count: 1
+> GPU0 = "AMD Ryzen Embedded V1605B with Radeon Vega Gfx" IS  capable of Peer-to-Peer (P2P)
+Points = 4194304 dimensions = 3, threads = 512, blocks = 32
+4194304 equal nodes removed. 
+Error in last partition pass.  Probably due to insufficient number of partiion passes, level = 2147483647

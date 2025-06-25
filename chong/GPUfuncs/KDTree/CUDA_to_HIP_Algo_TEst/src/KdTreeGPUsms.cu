@@ -75,14 +75,14 @@
  * number of dimensions.
  */
 
+ #include <hip/hip_runtime.h>
 #include <stdbool.h>
-#include <cstdlib>
+#include <stdlib.h>
 #include <vector>
 #include <list>
-#include <cmath>
+#include <math.h>
 #include <iostream>
 #include <iomanip>
-#include <hip/hip_runtime.h>
 using std::setprecision;
 
 using namespace std;
@@ -216,7 +216,7 @@ KdNode* KdNode::createKdTree(KdNode kdNodes[], KdCoord coordinates[],  const sin
 
 	TIMER_START();
 	Gpu::initializeKdNodesArray(coordinates, numTuples, numDimensions);
-	HIP_CHECK(hipDeviceSynchronize());
+	hipDeviceSynchronize();
 	TIMER_STOP (double initTime);
 
 	// Sort the reference array using multiple threads if possible.
@@ -225,10 +225,32 @@ KdNode* KdNode::createKdTree(KdNode kdNodes[], KdCoord coordinates[],  const sin
 	sint end[numDimensions]; // Array used to collect results of the remove duplicates function
 	Gpu::mergeSort(end, numTuples, numDimensions);
 	TIMER_STOP (double sortTime);
+
+	// Check that the same number of references was removed from each reference array.
+	for (sint i = 0; i < numDimensions-1; i++) {
+		if (end[i] < 0) {
+			cout << "removeDuplicates failed on dimension " << i << endl;
+			cout << end[0];
+			for (sint k = 1;  k<numDimensions; k++) cout << ", " << end[k] ;
+			cout << endl;
+			exit(1);
+		}
+		for (sint j = i + 1; j < numDimensions; j++) {
+			if ( end[i] != end[j] ) {
+				cout << "Duplicate removal error" << endl;
+				cout << end[0];
+				for (sint k = 1;  k<numDimensions; k++) cout << ", " << end[k] ;
+				cout << endl;
+				exit(1);
+			}
+		}
+	}
+	cout << numTuples-end[0] << " equal nodes removed. "<< endl;
+
 	// Build the k-d tree.
 	TIMER_START();
 	//  refIdx_t root = gpu->startBuildKdTree(kdNodes, end[0], numDimensions);
-	refIdx_t root = Gpu::buildKdTree(kdNodes, numTuples, numDimensions);
+	refIdx_t root = Gpu::buildKdTree(kdNodes, end[0], numDimensions);
 	TIMER_STOP (double kdTime);
 
 	// Verify the k-d tree and report the number of KdNodes.
@@ -238,9 +260,9 @@ KdNode* KdNode::createKdTree(KdNode kdNodes[], KdCoord coordinates[],  const sin
 	cout <<  "Number of nodes = " << numberOfNodes << endl;
 	TIMER_STOP (double verifyTime);
 
-	// cout << "totalTime = " << fixed << setprecision(4) << initTime + sortTime + kdTime + verifyTime
-	// 		<< "  initTime = " << initTime << "  sortTime + removeDuplicatesTime = " << sortTime
-	// 		<< "  kdTime = " << kdTime << "  verifyTime = " << verifyTime << endl << endl;
+	cout << "totalTime = " << fixed << setprecision(4) << initTime + sortTime + kdTime + verifyTime
+			<< "  initTime = " << initTime << "  sortTime + removeDuplicatesTime = " << sortTime
+			<< "  kdTime = " << kdTime << "  verifyTime = " << verifyTime << endl << endl;
 
 	// Return the pointer to the root of the k-d tree.
 	return &kdNodes[root];
@@ -404,7 +426,6 @@ sint main(sint argc, char **argv)
 	cout << "Points = " << numPoints << " dimensions = " << numDimensions << ", threads = " << numThreads << ", blocks = " << numBlocks << endl;
 
 	srand(0);
-	// make empty 2D array of numPoints points and numDimensions Dimensions
 	KdCoord (*coordinates) = new KdCoord[numPoints*numDimensions];
 	for ( i = 0; i<numPoints; i++) {
 		for (sint j=0; j<numDimensions; j++) {

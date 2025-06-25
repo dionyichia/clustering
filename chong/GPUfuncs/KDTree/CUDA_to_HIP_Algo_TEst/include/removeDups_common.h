@@ -39,7 +39,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "KdNode.h"
-#include "buildKdTree_common.h"
 
 #ifndef SHARED_SIZE_LIMIT
 #define SHARED_SIZE_LIMIT (1024U)

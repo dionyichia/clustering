@@ -15,6 +15,23 @@
 using Point = std::vector<double>;
 using PI     = std::pair<Point,int>;
 
+struct __attribute__ ((packed)) Edge
+{
+    uint u;
+    uint v;
+    float weight;
+    
+    // Constructor for convenience
+    Edge(uint _u = 0, uint _v = 0, float _weight = 0) : u(_u), v(_v), weight(_weight) {}
+    
+    // For sorting edges by weight
+    bool operator<(const Edge& other) const {
+        if (weight != other.weight) return weight < other.weight;
+        if (u != other.u) return u < other.u;
+        return v < other.v;
+    }
+};
+
 struct KDNode {
   Point             point;   // was array<double,2>, now vector
   int               axis;    // will be set in [0…D−1]
@@ -302,6 +319,41 @@ void convertToMutualReachability(
     }
 }
 
+/**
+ * Flatten the k-NN graph into a vector of Edge structs.
+ * Each point i has k neighbors, so we get k*N total edges.
+ * 
+ * @param knn_graph: Vector where knn_graph[i] contains k nearest neighbors of point i
+ *                   as pairs of (neighbor_index, mutual_reachability_distance)
+ * @return: Vector of Edge structs, each containing (u, v, weight) where:
+ *          - u is the source point index
+ *          - v is the neighbor point index  
+ *          - weight is the mutual reachability distance
+ */
+std::vector<Edge> flatten(const std::vector<std::vector<std::pair<int,double>>>& knn_graph) {
+    std::vector<Edge> edges;
+    
+    // Calculate total number of edges (k * N)
+    size_t total_edges = 0;
+    for (const auto& neighbors : knn_graph) {
+        total_edges += neighbors.size();
+    }
+    edges.reserve(total_edges);
+    
+    // Iterate through each point and its neighbors
+    for (uint i = 0; i < knn_graph.size(); ++i) {
+        for (const auto& neighbor : knn_graph[i]) {
+            uint neighbor_idx = static_cast<uint>(neighbor.first);
+            float mrd = static_cast<float>(neighbor.second);
+            
+            // Create edge from point i to its neighbor
+            edges.emplace_back(i, neighbor_idx, mrd);
+        }
+    }
+    
+    return edges;
+}
+
 // Print CLI Usage Instructions
 void printUsage(char* prog) {
   std::cerr << R"(Usage:
@@ -567,4 +619,10 @@ int main(int argc, char** argv) {
     // Calculate Mutual Reachability Distance
     convertToMutualReachability(knn_graph, core_dist);
     printAndVerifyMutualReachability(points, core_dist, knn_graph,metric,minkowskiP);
+    // After you've built your knn_graph and converted to mutual reachability
+    std::vector<Edge> all_edges = flatten(knn_graph);
+    // Now you can sort by weight if needed
+    std::sort(all_edges.begin(), all_edges.end()); // Uses your Edge::operator
+
+    std::cout << "Total edges: " << all_edges.size() << std::endl;
 }

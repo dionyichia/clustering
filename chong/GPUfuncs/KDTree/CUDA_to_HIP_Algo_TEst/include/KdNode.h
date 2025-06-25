@@ -42,10 +42,10 @@
 #include <stdlib.h>
 #include <vector>
 #include <list>
-#include <cmath>
+#include <math.h>
 #include <iostream>
 #include <iomanip>
-#include <cstdint>
+#include <stdint.h>
 using std::setprecision;
 
 typedef int32_t KdCoord;
@@ -138,7 +138,7 @@ public:
 	 * returns: a list that contains the kdNodes that lie within the cutoff distance of the query node
 	 */
 public:
-	std::list<KdNode> searchKdTree(const KdNode kdNodes[], const KdCoord coordinates[], const KdCoord* query, const sint cut,
+	list<KdNode> searchKdTree(const KdNode kdNodes[], const KdCoord coordinates[], const KdCoord* query, const sint cut,
 			const sint dim, const sint depth) const;
 
 	/*

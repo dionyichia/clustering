@@ -173,5 +173,11 @@ int main(int argc, char** argv) {
   // Calculate Mutual Reachability Distance
   convertToMutualReachability(knn_graph, core_dist);
   printAndVerifyMutualReachability(points, core_dist, knn_graph,metric,minkowskiP);
+  // After you've built your knn_graph and converted to mutual reachability
+  std::vector<Edge> all_edges = flatten(knn_graph);
+  // Now you can sort by weight if needed
+  std::sort(all_edges.begin(), all_edges.end()); // Uses your Edge::operator
+  std::cout << "Total edges: " << all_edges.size() << std::endl;
+  printFirstNEdges(all_edges);
 }
 

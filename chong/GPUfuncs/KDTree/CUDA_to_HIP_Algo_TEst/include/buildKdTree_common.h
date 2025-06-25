@@ -34,20 +34,12 @@
 #ifndef BUILDKDTREE_COMMON_H_
 #define BUILDKDTREE_COMMON_H_
 
-#ifdef __HIP_PLATFORM_HCC__
-# undef warpSize
-# define warpSize 64
-#endif
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // Shortcut definitions
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "KdNode.h"
-#include <hip/hip_runtime.h>
-#include <cstdio>   // for fprintf
-#include <cstdlib>  // for exit()
 
 
 #ifndef SHARED_SIZE_LIMIT
@@ -61,17 +53,5 @@
 // Extensive partition  routine
 ////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
-// Error Checking
-////////////////////////////////////////////////////////////////////////////////
-
-#define HIP_CHECK(call)                                                         \
-  do {                                                                          \
-    hipError_t err = call;                                                      \
-    if (err != hipSuccess) {                                                    \
-      fprintf(stderr, "HIP error %s:%d: %s\n", __FILE__, __LINE__, hipGetErrorString(err)); \
-      exit(err);                                                                \
-    }                                                                           \
-  } while (0)
 
 #endif /* BUILDKDTREE_COMMON_H_ */
