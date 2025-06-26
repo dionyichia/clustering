@@ -1,5 +1,5 @@
 #include "single_linkage.hpp"
-#include "boruvka/boruvka.hpp"  // Include for Edge definition
+#include "kd_tree/include/types.hpp"  // Include for Edge definition
 #include <algorithm>
 #include <limits>
 #include <cassert>

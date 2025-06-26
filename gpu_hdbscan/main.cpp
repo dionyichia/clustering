@@ -14,23 +14,6 @@
 #include "boruvka/boruvka.hpp" 
 #include "single_linkage/single_linkage.hpp"
 
-
-// Recursively gather all original points under cluster `c`.
-void collect_members(int c,
-                     int N_pts,
-                     const std::vector<int>& left_child,
-                     const std::vector<int>& right_child,
-                     std::vector<int>& out)
-{
-    if (c < N_pts) {
-        // leaf
-        out.push_back(c);
-    } else {
-        collect_members(left_child[c], N_pts, left_child, right_child, out);
-        collect_members(right_child[c],N_pts, left_child, right_child, out);
-    }
-}
-
 int main(int argc, char** argv) {
   std::vector<Point> points;
   int dimensions = NULL;
@@ -258,7 +241,7 @@ int main(int argc, char** argv) {
 
 
    std::cout << "\n=== Running Single Linkage Clustering ===" << std::endl;
-   
+
    // Set min_cluster_size if not already set
     if (min_cluster_size == NULL) {
         min_cluster_size = 2;  // or use k as default

@@ -1,6 +1,6 @@
-#include "util.hpp"
-#include "distance.hpp"
-#include "kdtree.hpp"
+#include "kd_tree/include/util.hpp"
+#include "kd_tree/include/distance.hpp"
+#include "kd_tree/include/kdtree.hpp"
 #include <hip/hip_runtime.h>
 #include <cstring>   // for strcmp
 #include <iostream>

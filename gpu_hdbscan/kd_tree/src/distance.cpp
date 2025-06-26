@@ -1,4 +1,4 @@
-#include "distance.hpp"
+#include "kd_tree/include/distance.hpp"
 #include <cassert>
 #include <cmath>
 #include <stdexcept>

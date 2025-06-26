@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <iostream>
+#include "kd_tree/include/types.hpp"  // Include for Edge definition
 
 // Forward declaration for Edge type (assuming it's defined in boruvka.hpp)
 struct Edge;

@@ -3,7 +3,7 @@
 
 # Compiler settings
 HIPCC = hipcc
-CXX = g++
+CXX = hipcc
 CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -Ifinal/include
 HIPFLAGS = -std=c++17 -O3 --offload-arch=gfx1030 --offload-arch=gfx1031 --offload-arch=gfx1032 -Ifinal/include
 
