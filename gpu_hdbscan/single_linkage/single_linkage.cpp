@@ -233,10 +233,10 @@ std::vector<std::vector<int>> single_linkage_clustering(
                 if(!is_selected[selected]) {
                     is_selected[selected] = true;
                     final_clusters.push_back(selected);
-                //     std::cout << "[DEBUG] Selected cluster " << selected 
-                //             << " (size=" << sz[selected] 
-                //             << ", stability=" << stability[selected] << ")" << std::endl;
-                // }
+                    // std::cout << "[DEBUG] Selected cluster " << selected 
+                    //         << " (size=" << sz[selected] 
+                    //         << ", stability=" << stability[selected] << ")" << std::endl;
+                }
             }
             found_root = true;
             // break; // Assuming single root (typical case)
