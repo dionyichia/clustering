@@ -8,6 +8,7 @@ from sklearn.cluster import HDBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
+# import matplotlib.pyplot as plt
 
 class GPUHDBSCANWrapper:
     def __init__(self, executable_path="./gpu_hdbscan/build/gpu_hdbscan"):
@@ -75,14 +76,14 @@ class GPUHDBSCANWrapper:
 def generate_test_data(data_type='blobs', n_samples=1000):
     """Generate synthetic datasets for testing"""
     if data_type == 'blobs':
-        X, y = make_blobs(n_samples=n_samples, centers=4, n_features=2, 
+        X, y = make_blobs(n_samples=n_samples, centers=10, n_features=2, 
                          cluster_std=1.5, random_state=42)
-    elif data_type == 'circles':
-        X, y = make_circles(n_samples=n_samples, noise=0.1, factor=0.5, random_state=42)
-    elif data_type == 'moons':
-        X, y = make_moons(n_samples=n_samples, noise=0.1, random_state=42)
+    # elif data_type == 'circles':
+    #     X, y = make_circles(n_samples=n_samples, noise=0.1, factor=0.5, random_state=42)
+    # elif data_type == 'moons':
+    #     X, y = make_moons(n_samples=n_samples, noise=0.1, random_state=42)
     elif data_type == 'anisotropic':
-        X, y = make_blobs(n_samples=n_samples, centers=3, n_features=2, random_state=42)
+        X, y = make_blobs(n_samples=n_samples, centers=10, n_features=2, random_state=42)
         transformation = [[0.6, -0.6], [-0.4, 0.8]]
         X = np.dot(X, transformation)
     
@@ -123,7 +124,7 @@ def run_benchmark():
     
     # Test datasets
     datasets = ['blobs', 'circles', 'moons', 'anisotropic']
-    sample_sizes = [10000, 100000, 500000]
+    sample_sizes = [10000, 100000, 300000]
     
     for data_type in datasets:
         for n_samples in sample_sizes:

@@ -250,7 +250,11 @@ int main(int argc, char** argv) {
     } else {
         std::sort(all_edges.begin(), all_edges.end());
         std::cout << "[DEBUG] Used std::sort on CPU\n";
-  }
+    }
+    std::cout << "[DEBUG] After sort, first few weights:";
+    for (size_t i = 0; i < std::min<size_t>(5, all_edges.size()); ++i)
+        std::cout << " " << all_edges[i].weight;
+    std::cout << "\n";
   DEBUG_PRINT("Total edges: " << all_edges.size() << std::endl);
   if (!quiet_mode) {
         printFirstNEdges(all_edges);
