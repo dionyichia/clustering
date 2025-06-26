@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <limits>
 #include <functional>
-
+#include <thrust/device_vector.h>
+#include <thrust/sort.h>
+#include <thrust/copy.h>
 #include "kd_tree/include/util.hpp"
 #include "kd_tree/include/distance.hpp"
 #include "kd_tree/include/kdtree.hpp"
@@ -231,7 +233,24 @@ int main(int argc, char** argv) {
   // After you've built your knn_graph and converted to mutual reachability
   std::vector<Edge> all_edges = flatten(knn_graph);
   // Now you can sort by weight if needed
-  std::sort(all_edges.begin(), all_edges.end()); // Uses your Edge::operator
+  constexpr size_t GPU_SORT_THRESHOLD = 1'000'000;
+  std::cout << "[DEBUG] Before sort, first few weights:";
+  for (size_t i = 0; i < std::min<size_t>(5, all_edges.size()); ++i)
+        std::cout << " " << all_edges[i].weight;
+    std::cout << "\n";
+
+    if (all_edges.size() >= GPU_SORT_THRESHOLD) {
+        // copy up to GPU
+        thrust::device_vector<Edge> d_edges(all_edges.begin(), all_edges.end());
+        // GPU parallel sort using Edge::operator<
+        thrust::sort(d_edges.begin(), d_edges.end());
+        // copy back
+        thrust::copy(d_edges.begin(), d_edges.end(), all_edges.begin());
+        std::cout << "[DEBUG] Used thrust::sort on GPU\n";
+    } else {
+        std::sort(all_edges.begin(), all_edges.end());
+        std::cout << "[DEBUG] Used std::sort on CPU\n";
+  }
   DEBUG_PRINT("Total edges: " << all_edges.size() << std::endl);
   if (!quiet_mode) {
         printFirstNEdges(all_edges);
