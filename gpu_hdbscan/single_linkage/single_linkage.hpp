@@ -5,8 +5,15 @@
 #include <iostream>
 #include "kd_tree/include/types.hpp"  // Include for Edge definition
 
-// Forward declaration for Edge type (assuming it's defined in boruvka.hpp)
-struct Edge;
+// Structure to hold cluster selection choices
+struct ClusterChoice {
+    float total_stability;
+    std::vector<int> selected_clusters;
+    
+    ClusterChoice() : total_stability(0.0f) {}
+    ClusterChoice(float stab, std::vector<int> clusters) 
+        : total_stability(stab), selected_clusters(std::move(clusters)) {}
+};
 
 // Function to perform single linkage clustering
 std::vector<std::vector<int>> single_linkage_clustering(
