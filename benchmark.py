@@ -8,10 +8,9 @@ from sklearn.cluster import HDBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
-import matplotlib.pyplot as plt
 
 class GPUHDBSCANWrapper:
-    def __init__(self, executable_path="./build/gpu_hdbscan"):
+    def __init__(self, executable_path="./gpu_hdbscan/build/gpu_hdbscan"):
         self.executable_path = executable_path
         
     def fit_predict(self, X, min_samples=5, min_cluster_size=5, distance_metric=2, minkowski_p=2.0):
@@ -124,7 +123,7 @@ def run_benchmark():
     
     # Test datasets
     datasets = ['blobs', 'circles', 'moons', 'anisotropic']
-    sample_sizes = [500, 1000, 2000]
+    sample_sizes = [10000, 100000, 500000]
     
     for data_type in datasets:
         for n_samples in sample_sizes:
@@ -189,76 +188,76 @@ def run_benchmark():
     print(df.to_string(index=False))
     
     # Plot results
-    plot_benchmark_results(df)
+    # plot_benchmark_results(df)
     
     return df
 
-def plot_benchmark_results(df):
-    """Plot benchmark results"""
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+# def plot_benchmark_results(df):
+#     """Plot benchmark results"""
+#     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     
-    # Time comparison
-    datasets = df['Dataset'].unique()
-    x = np.arange(len(datasets))
-    width = 0.25
+#     # Time comparison
+#     datasets = df['Dataset'].unique()
+#     x = np.arange(len(datasets))
+#     width = 0.25
     
-    gpu_times = df.groupby('Dataset')['GPU_Time'].mean()
-    sklearn_times = df.groupby('Dataset')['Sklearn_Time'].mean()
+#     gpu_times = df.groupby('Dataset')['GPU_Time'].mean()
+#     sklearn_times = df.groupby('Dataset')['Sklearn_Time'].mean()
     
-    axes[0,0].bar(x - width, gpu_times, width, label='GPU HDBSCAN', alpha=0.8)
-    axes[0,0].bar(x, sklearn_times, width, label='Sklearn HDBSCAN', alpha=0.8)
-    axes[0,0].set_xlabel('Dataset')
-    axes[0,0].set_ylabel('Time (seconds)')
-    axes[0,0].set_title('Execution Time Comparison')
-    axes[0,0].set_xticks(x)
-    axes[0,0].set_xticklabels(datasets)
-    axes[0,0].legend()
-    axes[0,0].set_yscale('log')
+#     axes[0,0].bar(x - width, gpu_times, width, label='GPU HDBSCAN', alpha=0.8)
+#     axes[0,0].bar(x, sklearn_times, width, label='Sklearn HDBSCAN', alpha=0.8)
+#     axes[0,0].set_xlabel('Dataset')
+#     axes[0,0].set_ylabel('Time (seconds)')
+#     axes[0,0].set_title('Execution Time Comparison')
+#     axes[0,0].set_xticks(x)
+#     axes[0,0].set_xticklabels(datasets)
+#     axes[0,0].legend()
+#     axes[0,0].set_yscale('log')
     
-    # Memory comparison
-    gpu_memory = df.groupby('Dataset')['GPU_Memory'].mean()
-    sklearn_memory = df.groupby('Dataset')['Sklearn_Memory'].mean()
+#     # Memory comparison
+#     gpu_memory = df.groupby('Dataset')['GPU_Memory'].mean()
+#     sklearn_memory = df.groupby('Dataset')['Sklearn_Memory'].mean()
     
-    axes[0,1].bar(x - width, gpu_memory, width, label='GPU HDBSCAN', alpha=0.8)
-    axes[0,1].bar(x, sklearn_memory, width, label='Sklearn HDBSCAN', alpha=0.8)
-    axes[0,1].set_xlabel('Dataset')
-    axes[0,1].set_ylabel('Memory (MB)')
-    axes[0,1].set_title('Memory Usage Comparison')
-    axes[0,1].set_xticks(x)
-    axes[0,1].set_xticklabels(datasets)
-    axes[0,1].legend()
+#     axes[0,1].bar(x - width, gpu_memory, width, label='GPU HDBSCAN', alpha=0.8)
+#     axes[0,1].bar(x, sklearn_memory, width, label='Sklearn HDBSCAN', alpha=0.8)
+#     axes[0,1].set_xlabel('Dataset')
+#     axes[0,1].set_ylabel('Memory (MB)')
+#     axes[0,1].set_title('Memory Usage Comparison')
+#     axes[0,1].set_xticks(x)
+#     axes[0,1].set_xticklabels(datasets)
+#     axes[0,1].legend()
     
-    # Speedup visualization
-    speedup_sklearn = df.groupby('Dataset')['Speedup_vs_Sklearn'].mean()
+#     # Speedup visualization
+#     speedup_sklearn = df.groupby('Dataset')['Speedup_vs_Sklearn'].mean()
     
-    axes[1,0].bar(x - width/2, speedup_sklearn, width, label='vs Sklearn', alpha=0.8)
-    axes[1,0].set_xlabel('Dataset')
-    axes[1,0].set_ylabel('Speedup Factor')
-    axes[1,0].set_title('GPU HDBSCAN Speedup')
-    axes[1,0].set_xticks(x)
-    axes[1,0].set_xticklabels(datasets)
-    axes[1,0].legend()
-    axes[1,0].axhline(y=1, color='red', linestyle='--', alpha=0.7)
+#     axes[1,0].bar(x - width/2, speedup_sklearn, width, label='vs Sklearn', alpha=0.8)
+#     axes[1,0].set_xlabel('Dataset')
+#     axes[1,0].set_ylabel('Speedup Factor')
+#     axes[1,0].set_title('GPU HDBSCAN Speedup')
+#     axes[1,0].set_xticks(x)
+#     axes[1,0].set_xticklabels(datasets)
+#     axes[1,0].legend()
+#     axes[1,0].axhline(y=1, color='red', linestyle='--', alpha=0.7)
     
-    # Scaling with data size
-    for dataset in datasets:
-        subset = df[df['Dataset'] == dataset]
-        axes[1,1].plot(subset['Samples'], subset['GPU_Time'], 'o-', label=f'GPU {dataset}', alpha=0.8)
-        axes[1,1].plot(subset['Samples'], subset['Sklearn_Time'], 's--', label=f'Sklearn {dataset}', alpha=0.8)
+#     # Scaling with data size
+#     for dataset in datasets:
+#         subset = df[df['Dataset'] == dataset]
+#         axes[1,1].plot(subset['Samples'], subset['GPU_Time'], 'o-', label=f'GPU {dataset}', alpha=0.8)
+#         axes[1,1].plot(subset['Samples'], subset['Sklearn_Time'], 's--', label=f'Sklearn {dataset}', alpha=0.8)
     
-    axes[1,1].set_xlabel('Number of Samples')
-    axes[1,1].set_ylabel('Time (seconds)')
-    axes[1,1].set_title('Scaling with Data Size')
-    axes[1,1].set_yscale('log')
-    axes[1,1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+#     axes[1,1].set_xlabel('Number of Samples')
+#     axes[1,1].set_ylabel('Time (seconds)')
+#     axes[1,1].set_title('Scaling with Data Size')
+#     axes[1,1].set_yscale('log')
+#     axes[1,1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     
-    plt.tight_layout()
-    plt.savefig('gpu_hdbscan_benchmark.png', dpi=300, bbox_inches='tight')
-    plt.show()
+#     plt.tight_layout()
+#     plt.savefig('gpu_hdbscan_benchmark.png', dpi=300, bbox_inches='tight')
+#     plt.show()
 
 if __name__ == "__main__":
     # Make sure your executable is built
-    executable_path = "./build/gpu_hdbscan"
+    executable_path = "./gpu_hdbscan/build/gpu_hdbscan"
     if not os.path.exists(executable_path):
         print(f"Executable not found at {executable_path}")
         print("Please run 'make' to build the project first")
