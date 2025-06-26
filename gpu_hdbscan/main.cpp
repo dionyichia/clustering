@@ -141,10 +141,7 @@ int main(int argc, char** argv) {
   int N = points.size();
   std::vector<std::vector<std::pair<int,double>>> knn_graph(points.size());
   std::vector<double> core_dist(points.size());
-  std::vector<int> pointIndexes(points.size());
-  for (int i = 0; i < (int)points.size(); ++i){
-        pointIndexes.push_back(static_cast<int>(i));
-    }
+
   auto root = buildKDTree(points);
 
   for (int i = 0; i < N; ++i) {
@@ -180,6 +177,7 @@ int main(int argc, char** argv) {
       std::reverse(nbrs.begin(), nbrs.end());
       knn_graph[i] = std::move(nbrs);
   }
+  
   printAndVerifyCoreDists(points, core_dist, k,metric,minkowskiP);
 
   // Calculate Mutual Reachability Distance
