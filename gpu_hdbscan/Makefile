@@ -27,7 +27,7 @@ SINGLE_OBJECTS = $(patsubst $(SINGLE_DIR)/%.cpp,$(BUILDDIR)/single_%.o,$(SINGLE_
 
 # Filter out main.cpp objects to avoid multiple main functions
 FINAL_OBJECTS := $(filter-out $(BUILDDIR)/final_main.o,$(FINAL_OBJECTS))
-SINGLE_OBJECTS := $(filter-out $(BUILDDIR)/single_main.o,$(SINGLE_OBJECTS))
+SINGLE_OBJECTS := $(filter-out $(BUILDDIR)/single_single_link_main.o,$(SINGLE_OBJECTS))
 
 # Main executable
 MAIN_OBJ = $(BUILDDIR)/main.o
