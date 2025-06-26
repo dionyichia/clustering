@@ -68,6 +68,8 @@ std::vector<std::vector<int>> single_linkage_clustering(
         stability[i] = 0;
     }
     int next_cluster_id = N_pts;
+
+    // initialise each point as its own singleton cluster 
     std::cout << "[DEBUG] Initialized " << next_cluster_id << " singleton clusters\n";
 
     // lambda to find root (path-compressed):
@@ -117,6 +119,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
         //         << " into " << c_new << " at lambda=" << lambda << "\n";
     }
 
+    // supposed to have 2N-1 clusters since there will be N-1 merges from N-1 edges
     std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
 
     // Finalize singleton deaths
