@@ -5,11 +5,9 @@
 #include <cassert>
 #include <iostream>
 #include <vector>
-#ifdef USE_THRUST
-  #include <thrust/device_vector.h>
-  #include <thrust/sort.h>
-  #include <thrust/copy.h>
-#endif
+#include <thrust/device_vector.h>
+#include <thrust/sort.h>
+#include <thrust/copy.h>
 
 // Recursively gather all original points under cluster `c`.
 void collect_members(int c,
@@ -36,37 +34,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Make a copy of mst_edges for sorting
     std::vector<Edge> edges_copy = mst_edges;
-    constexpr size_t GPU_SORT_THRESHOLD = 1'000'000;
-
-    std::cout << "[DEBUG] Before sort, first few weights:";
-    for (size_t i = 0; i < std::min<size_t>(5, edges_copy.size()); ++i)
-        std::cout << " " << edges_copy[i].weight;
-    std::cout << "\n";
-
-    if (edges_copy.size() >= GPU_SORT_THRESHOLD) {
-    #ifdef USE_THRUST
-        // copy up to GPU
-        thrust::device_vector<Edge> d_edges(edges_copy.begin(), edges_copy.end());
-        // GPU parallel sort using Edge::operator<
-        thrust::sort(d_edges.begin(), d_edges.end());
-        // copy back
-        thrust::copy(d_edges.begin(), d_edges.end(), edges_copy.begin());
-        std::cout << "[DEBUG] Used thrust::sort on GPU\n";
-    #else
-        std::cerr << "[WARN] USE_THRUST not defined—falling back to std::sort\n";
-        std::sort(edges_copy.begin(), edges_copy.end());
-    #endif
-    } else {
-        std::sort(edges_copy.begin(), edges_copy.end());
-        std::cout << "[DEBUG] Used std::sort on CPU\n";
-    }
-
-    std::cout << "[DEBUG] After sort, smallest 5 weights:";
-    for (size_t i = 0; i < std::min<size_t>(5, edges_copy.size()); ++i)
-        std::cout << " " << edges_copy[i].weight;
-    std::cout << "\n";
-
-    // After sorting:
     assert(!edges_copy.empty());
     for (auto &e : edges_copy) {
         assert(e.u >= 0 && e.u < N_pts);
@@ -117,14 +84,25 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Build hierarchy
     for(auto &e : edges_copy){
+        // if nodes are already in the same cluster
+        // continue
         int c1 = find_root(e.u), c2 = find_root(e.v);
         if(c1 == c2) continue;
 
+        // else merge them
+
+        // lambda = 1 / MRD 
+        // decrease from lambda = infinity to lambda = 0
         float lambda = 1.f / e.weight;
+        
+        // if clusters merged, track their death lambda
         death_lambda[c1] = death_lambda[c2] = lambda;
+
+        // record their stability as (birth - death * size)
         stability[c1] += (birth_lambda[c1] - lambda) * sz[c1];
         stability[c2] += (birth_lambda[c2] - lambda) * sz[c2];
 
+        // make new cluster
         int c_new = next_cluster_id++;
         parent[c1] = parent[c2] = c_new;
         parent[c_new] = c_new;
