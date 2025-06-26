@@ -34,8 +34,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Make a copy of mst_edges for sorting
     std::vector<Edge> edges_copy = mst_edges;
-
-    // After sorting:
     assert(!edges_copy.empty());
     for (auto &e : edges_copy) {
         assert(e.u >= 0 && e.u < N_pts);
