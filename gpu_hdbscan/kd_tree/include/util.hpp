@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "kd_tree/include/types.hpp"
 #include <string>
 #include <vector>
 
