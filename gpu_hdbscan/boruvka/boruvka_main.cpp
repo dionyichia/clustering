@@ -140,14 +140,12 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
     mst.weight = 0.0;
 
     // DEBUG 1: Print input validation
-    printf("=== INPUT VALIDATION ===\n");
-    printf("n_vertices: %llu, n_edges: %llu\n", n_vertices, n_edges);
+    // printf("=== INPUT VALIDATION ===\n");
+    // printf("n_vertices: %llu, n_edges: %llu\n", n_vertices, n_edges);
     if (n_edges == 0 || n_vertices == 0) {
         printf("ERROR: Invalid input - zero vertices or edges\n");
         return mst;
     }
-
-    std::cout << "start malloc : " << std::endl;
 
     char* mst_tree = (char*) malloc(sizeof(char) * n_edges);
 
@@ -179,9 +177,9 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
     HIP_CHECK(hipMemcpyToSymbol(mst_weight_total, &mst_weight, sizeof(double)));
 
     // DEBUG 3: Check kernel launch parameters
-    printf("=== KERNEL LAUNCH PARAMS ===\n");
-    printf("init_arrs: %d blocks, %d threads per block\n", NBLOCKS_OTHER, BLOCKSIZE_VERTEX);
-    printf("assign_cheapest: %d blocks, %d threads per block\n", NBLOCKS_ASSIGN_CHEAPEST, BLOCKSIZE_EDGE);
+    // printf("=== KERNEL LAUNCH PARAMS ===\n");
+    // printf("init_arrs: %d blocks, %d threads per block\n", NBLOCKS_OTHER, BLOCKSIZE_VERTEX);
+    // printf("assign_cheapest: %d blocks, %d threads per block\n", NBLOCKS_ASSIGN_CHEAPEST, BLOCKSIZE_EDGE);
 
     init_arrs<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
     HIP_CHECK(hipDeviceSynchronize());
@@ -194,10 +192,10 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
 
     int iteration = 0;
     do {
-        printf("\n=== ITERATION %d ===\n", iteration++);
+        // printf("\n=== ITERATION %d ===\n", iteration++);
         n_unions_old = n_unions;
 
-        std::cout << "resetting: " << std::endl;
+        // std::cout << "resetting: " << std::endl;
         reset_arrs<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
         HIP_CHECK(hipDeviceSynchronize());
 
@@ -205,7 +203,7 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
         debug_print_state<<<1, 1>>>("AFTER RESET");
         HIP_CHECK(hipDeviceSynchronize());
 
-        std::cout << "assigning cheapest: " << std::endl;
+        // std::cout << "assigning cheapest: " << std::endl;
         assign_cheapest<<<NBLOCKS_ASSIGN_CHEAPEST, BLOCKSIZE_EDGE>>>();
         HIP_CHECK(hipDeviceSynchronize());
 
@@ -213,7 +211,7 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
         debug_print_state<<<1, 1>>>("AFTER ASSIGN_CHEAPEST");
         HIP_CHECK(hipDeviceSynchronize());
 
-        std::cout << "updating: " << std::endl;
+        // std::cout << "updating: " << std::endl;
         update_mst<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
         // update_mst_simple<<<NBLOCKS_OTHER, BLOCKSIZE_VERTEX>>>();
         HIP_CHECK(hipDeviceSynchronize());
@@ -226,8 +224,8 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
         HIP_CHECK(hipMemcpyFromSymbol(&n_unions, n_unions_total, sizeof(ullong)));
         HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(double)));
 
-        printf("Iteration %d: n_unions_old=%llu, n_unions=%llu, mst_weight=%.6f\n", 
-               iteration-1, n_unions_old, n_unions, mst_weight);
+        // printf("Iteration %d: n_unions_old=%llu, n_unions=%llu, mst_weight=%.6f\n", 
+        //        iteration-1, n_unions_old, n_unions, mst_weight);
 
         // DEBUG 8: Prevent infinite loops
         if (iteration > n_vertices) {
@@ -237,8 +235,6 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
 
     } while (n_unions != n_unions_old && n_unions < n_vertices - 1);
 
-    std::cout << "gpu loop end copying back to host: " << std::endl;
-
     // DEBUG 9: Final state check
     debug_print_state<<<1, 1>>>("FINAL STATE");
     HIP_CHECK(hipDeviceSynchronize());
@@ -247,14 +243,12 @@ MST boruvka_mst(const ullong n_vertices, const ullong n_edges, Edge* edge_list) 
     HIP_CHECK(hipMemcpyFromSymbol(&mst_weight, mst_weight_total, sizeof(double)));
 
     // DEBUG 10: Print final results
-    printf("\n=== FINAL RESULTS ===\n");
-    printf("Final MST weight: %.6f\n", mst_weight);
-    printf("Final n_unions: %llu (expected: %llu)\n", n_unions, n_vertices - 1);
+    // printf("\n=== FINAL RESULTS ===\n");
+    // printf("Final MST weight: %.6f\n", mst_weight);
+    // printf("Final n_unions: %llu (expected: %llu)\n", n_unions, n_vertices - 1);
 
     mst.mst = mst_tree;
     mst.weight = mst_weight;
-
-    std::cout << "done copying" << std::endl;
 
     hipFree(d_mst);
     hipFree(d_vertices);
@@ -653,11 +647,11 @@ void initGPUs() {
         hipDeviceProp_t  deviceProps;
         hipGetDeviceProperties(&deviceProps, i);
 
-        printf("Device %d: %s\n", i, deviceProps.name);
-        printf("   SMs:        %d\n", deviceProps.multiProcessorCount);
-        printf("   Global mem: %.0f MB\n",
-               static_cast<float>(deviceProps.totalGlobalMem) / (1024 * 1024));
-        printf("   HIP Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
+        // printf("Device %d: %s\n", i, deviceProps.name);
+        // printf("   SMs:        %d\n", deviceProps.multiProcessorCount);
+        // printf("   Global mem: %.0f MB\n",
+        //        static_cast<float>(deviceProps.totalGlobalMem) / (1024 * 1024));
+        // printf("   HIP Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
         hipDeviceReset();  // Clears GPU memory from any prior runs
 
         size_t freeMem, totalMem;
@@ -667,7 +661,7 @@ void initGPUs() {
 
     }
 
-    printf("---------------------------------------------------------\n");
+    // printf("---------------------------------------------------------\n");
 }
 
 

@@ -14,6 +14,41 @@
 #include "boruvka/boruvka.hpp" 
 #include "single_linkage/single_linkage.hpp"
 
+// QUIET MODE to silence debug statements
+bool quiet_mode = false;
+
+// Replace all std::cout statements with conditional output:
+#define DEBUG_PRINT(x) if (!quiet_mode) { std::cout << x; }
+
+void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int total_points) {
+    // Create label array initialized to -1 (noise)
+    std::vector<int> labels(total_points, -1);
+    
+    // Assign cluster labels
+    for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id) {
+        for (int point_id : clusters[cluster_id]) {
+            if (point_id >= 0 && point_id < total_points) {
+                labels[point_id] = cluster_id;
+            }
+        }
+    }
+    
+    // ALWAYS output cluster labels (needed for Python parsing)
+    std::cout << "CLUSTER_LABELS:";
+    for (int i = 0; i < labels.size(); ++i) {
+        std::cout << " " << labels[i];
+    }
+    std::cout << std::endl;
+    
+    // Output cluster statistics (conditional)
+    DEBUG_PRINT("CLUSTER_STATS:" << std::endl);
+    DEBUG_PRINT("  Total points: " << total_points << std::endl);
+    DEBUG_PRINT("  Number of clusters: " << clusters.size() << std::endl);
+    int noise_count = std::count(labels.begin(), labels.end(), -1);
+    DEBUG_PRINT("  Noise points: " << noise_count << std::endl);
+    DEBUG_PRINT("  Clustered points: " << (total_points - noise_count) << std::endl);
+}
+
 int main(int argc, char** argv) {
   std::vector<Point> points;
   int dimensions = NULL;
@@ -40,7 +75,7 @@ int main(int argc, char** argv) {
           try{
               dimensions = std::stoi(argv[i+1]);
               i += 2;
-              std::cout << "Number Of Dimensions " << dimensions << "\n";
+              DEBUG_PRINT( "Number Of Dimensions " << dimensions << "\n");
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
               return 1;
@@ -50,7 +85,7 @@ int main(int argc, char** argv) {
           try{
               k = std::stoi(argv[i+1]);
               i += 2;
-              std::cout << "Minimum Points " << k << "\n";
+              DEBUG_PRINT("Minimum Points " << k << "\n"); 
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
               printUsage(argv[0]);
@@ -62,7 +97,7 @@ int main(int argc, char** argv) {
               points = readPointsFromFile(argv[i+1],dimensions);
               normalizePoints(points);
               i += 2;
-              std::cout << "Read " << points.size() << " points.\n";
+              DEBUG_PRINT( "Read " << points.size() << " points." << "\n");
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
               printUsage(argv[0]);
@@ -86,7 +121,7 @@ int main(int argc, char** argv) {
                       metric = DistanceMetric::Minkowski;
                       break;
               }
-              std::cout << "Distance Metric Selected: " << metricName(metric) << "\n";
+              DEBUG_PRINT( "Distance Metric Selected: " << metricName(metric) << "\n");
               i += 2; 
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
@@ -97,7 +132,7 @@ int main(int argc, char** argv) {
       else if (!strcmp(argv[i], "--minkowskiP")){
           try{
               minkowskiP = std::stof(argv[i+1]);
-              std::cout << "Minkowski P Value: " << minkowskiP << "\n";
+              DEBUG_PRINT( "Minkowski P Value: " << minkowskiP << "\n");
               i += 2;
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
@@ -108,7 +143,7 @@ int main(int argc, char** argv) {
       else if (!strcmp(argv[i], "--minclustersize")){
           try{
               min_cluster_size = std::stoi(argv[i+1]);
-              std::cout << "Min Cluster Size: " << min_cluster_size << "\n";
+              DEBUG_PRINT( "Min Cluster Size: " << min_cluster_size << "\n");
               i += 2;
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
@@ -116,6 +151,11 @@ int main(int argc, char** argv) {
               return 1;
           }
       }
+      else if (!strcmp(argv[i], "--quiet") || !strcmp(argv[i], "-q")) {
+            quiet_mode = true;
+            DEBUG_PRINT("Quiet mode enabled" << std::endl);  // This won't print since quiet_mode is now true
+            i += 1;  // Only increment by 1 since there's no argument after --quiet
+        }
       else {
           // unrecognized flag: skip just the flag
           std::cerr << "Warning: unknown option '" << argv[i] << "\n";
@@ -177,18 +217,25 @@ int main(int argc, char** argv) {
       std::reverse(nbrs.begin(), nbrs.end());
       knn_graph[i] = std::move(nbrs);
   }
-  
-  printAndVerifyCoreDists(points, core_dist, k,metric,minkowskiP);
+
+  if (!quiet_mode) {
+        printAndVerifyCoreDists(points, core_dist, k, metric, minkowskiP);
+    }
+
 
   // Calculate Mutual Reachability Distance
   convertToMutualReachability(knn_graph, core_dist);
-  printAndVerifyMutualReachability(points, core_dist, knn_graph,metric,minkowskiP);
+  if (!quiet_mode) {
+        printAndVerifyMutualReachability(points, core_dist, knn_graph, metric, minkowskiP);
+    }
   // After you've built your knn_graph and converted to mutual reachability
   std::vector<Edge> all_edges = flatten(knn_graph);
   // Now you can sort by weight if needed
   std::sort(all_edges.begin(), all_edges.end()); // Uses your Edge::operator
-  std::cout << "Total edges: " << all_edges.size() << std::endl;
-  printFirstNEdges(all_edges);
+  DEBUG_PRINT("Total edges: " << all_edges.size() << std::endl);
+  if (!quiet_mode) {
+        printFirstNEdges(all_edges);
+    }
 
   /* 
      all_edges = flattened array of k*N edges
@@ -200,8 +247,8 @@ int main(int argc, char** argv) {
   ullong n_vertices = static_cast<ullong>(N);
   ullong n_edges = static_cast<ullong>(numEdges);
 
-  std::cout << "\n=== Running Boruvka MST Algorithm ===" << std::endl;
-  std::cout << "Vertices: " << n_vertices << ", Edges: " << n_edges << std::endl;
+  DEBUG_PRINT( "\n=== Running Boruvka MST Algorithm ===" << "\n");
+  DEBUG_PRINT( "Vertices: " << n_vertices << ", Edges: " << n_edges << "\n");
     
     // Convert std::vector<Edge> to Edge* array for Boruvka function
     Edge* edge_array = all_edges.data();
@@ -209,36 +256,36 @@ int main(int argc, char** argv) {
     // Call your Boruvka MST function
     MST result = boruvka_mst(n_vertices, n_edges, edge_array);
     
-    std::cout << "\n=== Boruvka MST Results ===" << std::endl;
-    std::cout << "MST Weight: " << result.weight << std::endl;
+    DEBUG_PRINT( "\n=== Boruvka MST Results ===" << "\n");
+    DEBUG_PRINT( "MST Weight: " << result.weight << "\n");
     
     // Print MST edges
     int mst_edge_count = 0;
     std::vector<Edge> mst_edges;
 
     // Print all Edges take too long
-    std::cout << "MST Edges:" << std::endl;
+    DEBUG_PRINT( "MST Edges:" << "\n");
     for (ullong i = 0; i < n_edges; ++i) {
         if (result.mst[i] == 1) {
             mst_edges.push_back(edge_array[i]);
-            // std::cout << "Edge " << i << ": (" << edge_array[i].u << "," 
-            //         << edge_array[i].v << ") weight=" << edge_array[i].weight << std::endl;
+            // DEBUG_PRINT( "Edge " << i << ": (" << edge_array[i].u << "," 
+            //         << edge_array[i].v << ") weight=" << edge_array[i].weight << "\n");
             mst_edge_count++;
         }
     }
 
-    std::cout << "Total MST edges: " << mst_edge_count << std::endl;
-    std::cout << "Expected MST edges: " << n_vertices - 1 << std::endl;
+    DEBUG_PRINT( "Total MST edges: " << mst_edge_count << "\n");
+    DEBUG_PRINT( "Expected MST edges: " << n_vertices - 1 << "\n");
 
     // Post process MST into list of edges
 
     
     // TODO: Optimise
     int N_pts = points.size();
-    std::cout << "[DEBUG] Number of points (N_pts): " << N_pts << "\n";
+    DEBUG_PRINT( "[DEBUG] Number of points (N_pts): " << N_pts << "\n");
 
 
-   std::cout << "\n=== Running Single Linkage Clustering ===" << std::endl;
+   DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
 
    // Set min_cluster_size if not already set
     if (min_cluster_size == NULL) {
@@ -252,7 +299,20 @@ int main(int argc, char** argv) {
         min_cluster_size
     );
 
-    std::cout << "Single linkage clustering completed." << std::endl;
+    DEBUG_PRINT( "Single linkage clustering completed." << "\n");
+
+
+    // Output cluster labels for Python parsing
+    outputClusterLabels(clusters, N_pts);
+
+    // Clean up
+    if (result.mst) {
+        free(result.mst);
+        DEBUG_PRINT( "[DEBUG] Freed MST memory \n");
+    }
+
+    return 0;  // Add return statement
+}
 
     // // Set min_cluster_size if not already set
     // if (min_cluster_size == NULL) {
@@ -266,25 +326,25 @@ int main(int argc, char** argv) {
     //     min_cluster_size
     // );
 
-    // std::cout << "Single linkage clustering completed." << std::endl;
+    // DEBUG_PRINT( "Single linkage clustering completed." << "\n");
 
     // /* 
     //     COPY OUTPUT FROM BORUVKA INTO GPU AND RUN THRUST SORT, SHOULD BE FASTER
     //     BUT WILL INCUR COPY FROM HOST TO DEVICE COST
     // */
     // // assume `mst_edges` is your input vector<Edge> of size N–1
-    // std::cout << "[DEBUG] Before sort, first few weights:";
+    // DEBUG_PRINT( "[DEBUG] Before sort, first few weights:";
     // for (int i = 0; i < std::min<size_t>(5, mst_edges.size()); ++i)
-    //     std::cout << " " << mst_edges[i].weight;
-    // std::cout << "\n";
+    //     DEBUG_PRINT( " " << mst_edges[i].weight;
+    // DEBUG_PRINT( "\n";
 
     // std::sort(mst_edges.begin(), mst_edges.end(),
     //             [] (const Edge &a, const Edge &b) { return a.weight < b.weight; });
 
-    // std::cout << "[DEBUG] After sort, smallest 5 weights:";
+    // DEBUG_PRINT( "[DEBUG] After sort, smallest 5 weights:";
     // for (int i = 0; i < std::min<size_t>(5, mst_edges.size()); ++i)
-    //     std::cout << " " << mst_edges[i].weight;
-    // std::cout << "\n";
+    //     DEBUG_PRINT( " " << mst_edges[i].weight;
+    // DEBUG_PRINT( "\n";
 
     // // After sorting:
     // assert(!mst_edges.empty());
@@ -293,7 +353,7 @@ int main(int argc, char** argv) {
     //     assert(e.v >= 0 && e.v < N_pts);
     //     assert(e.weight > 0);
     // }
-    // std::cout << "[DEBUG] Edge assertions passed.\n";
+    // DEBUG_PRINT( "[DEBUG] Edge assertions passed.\n";
 
     // int max_clusters = 2 * N_pts;
     // std::vector<int> parent(max_clusters), sz(max_clusters);
@@ -301,14 +361,14 @@ int main(int argc, char** argv) {
     // std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
 
     // float smallest_weight = mst_edges.front().weight;
-    // std::cout << "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
+    // DEBUG_PRINT( "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
     // if (smallest_weight <= 0.f) {
     //     smallest_weight = std::numeric_limits<float>::min();
-    //     std::cout << "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
+    //     DEBUG_PRINT( "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
     // }
 
     // float lambda_max = 1.f / smallest_weight;
-    // std::cout << "[DEBUG] lambda_max: " << lambda_max << "\n";
+    // DEBUG_PRINT( "[DEBUG] lambda_max: " << lambda_max << "\n";
 
     // /* initialise all points as singleton clusters */
     // for(int i = 0; i < N_pts; ++i){
@@ -319,7 +379,7 @@ int main(int argc, char** argv) {
     //     stability[i]     = 0;
     // }
     // int next_cluster_id = N_pts;
-    // std::cout << "[DEBUG] Initialized " << next_cluster_id << " singleton clusters\n";
+    // DEBUG_PRINT( "[DEBUG] Initialized " << next_cluster_id << " singleton clusters\n";
 
     // // lambda to find root (path-compressed):
     // auto find_root = [&](int x){
@@ -353,11 +413,11 @@ int main(int argc, char** argv) {
     //     left_child[c_new]   = c1;
     //     right_child[c_new]  = c2;
 
-    //     std::cout << "[DEBUG] Merged clusters " << c1 << " and " << c2
+    //     DEBUG_PRINT( "[DEBUG] Merged clusters " << c1 << " and " << c2
     //             << " into " << c_new << " at lambda=" << lambda << "\n";
     // }
 
-    // std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
+    // DEBUG_PRINT( "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
 
     // // Finalize singleton deaths
     // for(int c = 0; c < next_cluster_id; ++c){
@@ -373,16 +433,16 @@ int main(int argc, char** argv) {
     //     if(sz[c] >= min_cluster_size && death_lambda[c] > 0)
     //         candidates.push_back(c);
     // }
-    // std::cout << "[DEBUG] Number of candidate clusters (size>=" << min_cluster_size
+    // DEBUG_PRINT( "[DEBUG] Number of candidate clusters (size>=" << min_cluster_size
     //         << "): " << candidates.size() << "\n";
 
     // // Sort candidates by stability
     // std::sort(candidates.begin(), candidates.end(),
     //     [&](int a, int b){ return stability[a] > stability[b]; });
-    // std::cout << "[DEBUG] Top 5 candidate stabilities:";
+    // DEBUG_PRINT( "[DEBUG] Top 5 candidate stabilities:";
     // for (int i = 0; i < std::min<int>(5, candidates.size()); ++i)
-    //     std::cout << " (" << candidates[i] << ":" << stability[candidates[i]] << ")";
-    // std::cout << "\n";
+    //     DEBUG_PRINT( " (" << candidates[i] << ":" << stability[candidates[i]] << ")";
+    // DEBUG_PRINT( "\n";
 
     // // Select final clusters
     // std::vector<bool> is_selected(max_clusters, false);
@@ -390,14 +450,14 @@ int main(int argc, char** argv) {
     // for(int c : candidates) {
     //     int L = left_child[c], R = right_child[c];
     //     if ((L >= N_pts && is_selected[L]) || (R >= N_pts && is_selected[R])) {
-    //         std::cout << "[DEBUG] Skipping cluster " << c << " because child already selected\n";
+    //         DEBUG_PRINT( "[DEBUG] Skipping cluster " << c << " because child already selected\n";
     //         continue;
     //     }
     //     is_selected[c] = true;
     //     final_clusters.push_back(c);
-    //     std::cout << "[DEBUG] Selected cluster " << c << "\n";
+    //     DEBUG_PRINT( "[DEBUG] Selected cluster " << c << "\n";
     // }
-    // std::cout << "[DEBUG] Total final clusters: " << final_clusters.size() << "\n";
+    // DEBUG_PRINT( "[DEBUG] Total final clusters: " << final_clusters.size() << "\n";
 
     // // Assign points
     // std::vector<int> assignment(N_pts, -1);
@@ -414,26 +474,18 @@ int main(int argc, char** argv) {
     //     }
     //     if(!this_cluster.empty()){
     //         clusters.push_back(std::move(this_cluster));
-    //         std::cout << "[DEBUG] Cluster " << (clusters.size()-1)
+    //         DEBUG_PRINT( "[DEBUG] Cluster " << (clusters.size()-1)
     //                 << " got " << clusters.back().size() << " points\n";
     //     }
     // }
 
     // // 4) Output
-    // std::cout << "Found " << clusters.size()
+    // DEBUG_PRINT( "Found " << clusters.size()
     //         << " clusters (min size = " << min_cluster_size << ")\n";
     // for(size_t i = 0; i < clusters.size(); ++i){
-    //     std::cout << "Cluster " << i << " (" 
+    //     DEBUG_PRINT( "Cluster " << i << " (" 
     //             << clusters[i].size() << " points): ";
     //     for(int p : clusters[i])
-    //         std::cout << p << " ";
-    //     std::cout << "\n";
+    //         DEBUG_PRINT( p << " ";
+    //     DEBUG_PRINT( "\n";
     // }
-
-    // Clean up
-    if (result.mst) {
-        free(result.mst);
-        std::cout << "[DEBUG] Freed MST memory\n";
-    }
-
-}
