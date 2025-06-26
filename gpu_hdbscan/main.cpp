@@ -253,7 +253,9 @@ int main(int argc, char** argv) {
 
     
     // TODO: Optimise
-   int N_pts = points.size();
+    int N_pts = points.size();
+    std::cout << "[DEBUG] Number of points (N_pts): " << N_pts << "\n";
+
 
    std::cout << "\n=== Running Single Linkage Clustering ===" << std::endl;
 
@@ -276,152 +278,151 @@ int main(int argc, char** argv) {
         BUT WILL INCUR COPY FROM HOST TO DEVICE COST
     */
     // assume `mst_edges` is your input vector<Edge> of size N–1
-    // std::sort(mst_edges.begin(), mst_edges.end(),
-    //             [] (const Edge &a, const Edge &b) { return a.weight < b.weight; });
+    std::cout << "[DEBUG] Before sort, first few weights:";
+    for (int i = 0; i < std::min<size_t>(5, mst_edges.size()); ++i)
+        std::cout << " " << mst_edges[i].weight;
+    std::cout << "\n";
 
-    // // After sorting:
-    // assert(!mst_edges.empty());
-    // for (auto &e : mst_edges) {
-    //     assert(e.u >= 0 && e.u < N_pts);
-    //     assert(e.v >= 0 && e.v < N_pts);
-    //     assert(e.weight > 0);
-    // }
-    
-    // // int N_pts = /* number of points */;
-    // int max_clusters = 2*N_pts;         // All p
-    // std::vector<int> parent(max_clusters), sz(max_clusters);
-    // std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters), stability(max_clusters);
-    // std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
-    
-    // // 2. Guard against zero‐length edges (just in case)
-    // float smallest_weight = mst_edges.front().weight;
-    // if (smallest_weight <= 0.f) {
-    //     // handle degenerate case (e.g. set to a tiny epsilon)
-    //     smallest_weight = std::numeric_limits<float>::min();
-    // }
+    std::sort(mst_edges.begin(), mst_edges.end(),
+                [] (const Edge &a, const Edge &b) { return a.weight < b.weight; });
 
-    // /* Compute lambda_max as the inverse of smallest_mrd. 
-    //    Prevents Singleton Clusters from being most stable.
-    // */
-    // float lambda_max = 1.f / smallest_weight;
-    // /* initialise all points as singleton clusters 
-    //    singleton clusters have cluster ids within [0,N_pts-1]
-    // */
-    // for(int i = 0; i < N_pts; ++i){
-    //     parent[i]       = i;
-    //     sz[i]           = 1;
-    //     birth_lambda[i]= lambda_max;
-    //     death_lambda[i]= 0;
-    //     stability[i]   = 0;
-    // }
-    // int next_cluster_id = N_pts;
+    std::cout << "[DEBUG] After sort, smallest 5 weights:";
+    for (int i = 0; i < std::min<size_t>(5, mst_edges.size()); ++i)
+        std::cout << " " << mst_edges[i].weight;
+    std::cout << "\n";
 
-    // // lambda function for finding parent of a cluster
-    // // includes two pass path compression 
-    // // first pass to find root
-    // // second pass to update all nodes along the path to point to root
-    // auto find_root = [&](int x){
-    //     // 1) Find the root
-    //     int root = x;
-    //     while(parent[root] != root)
-    //         root = parent[root];
-    //     // 2) Compress the path
-    //     while(parent[x] != root){
-    //         int next = parent[x];
-    //         parent[x] = root;
-    //         x = next;
-    //     }
-    //     return root;
-    // };
+    // After sorting:
+    assert(!mst_edges.empty());
+    for (auto &e : mst_edges) {
+        assert(e.u >= 0 && e.u < N_pts);
+        assert(e.v >= 0 && e.v < N_pts);
+        assert(e.weight > 0);
+    }
+    std::cout << "[DEBUG] Edge assertions passed.\n";
 
-    // // lambda function for finding root node of vertex in an edge 
-    // for(auto &e : mst_edges){
-    //     int c1 = find_root(e.u),
-    //         c2 = find_root(e.v);
-    //     // if clusters are already connected, continue
-    //     if(c1 == c2){
-    //         continue;
-    //     }
+    int max_clusters = 2 * N_pts;
+    std::vector<int> parent(max_clusters), sz(max_clusters);
+    std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters), stability(max_clusters);
+    std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
 
-    //     // else make new cluster
-    //     float lambda = 1.f / e.weight;
-    //     // record death of c1, c2
-    //     death_lambda[c1] = lambda;
-    //     death_lambda[c2] = lambda;
-    //     // update their stability contributions
-    //     stability[c1] += (birth_lambda[c1] - death_lambda[c1]) * sz[c1];
-    //     stability[c2] += (birth_lambda[c2] - death_lambda[c2]) * sz[c2];
+    float smallest_weight = mst_edges.front().weight;
+    std::cout << "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
+    if (smallest_weight <= 0.f) {
+        smallest_weight = std::numeric_limits<float>::min();
+        std::cout << "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
+    }
 
-    //     // make new cluster
-    //     int c_new = next_cluster_id++;
-    //     parent[c1] = parent[c2] = c_new;
-    //     parent[c_new] = c_new;
-    //     sz[c_new]         = sz[c1] + sz[c2];
-    //     birth_lambda[c_new] = lambda;
-    //     stability[c_new]   = 0;
-    //     death_lambda[c_new] = 0;
-    //     left_child[c_new]  = c1;
-    //     right_child[c_new] = c2;
-    // }
+    float lambda_max = 1.f / smallest_weight;
+    std::cout << "[DEBUG] lambda_max: " << lambda_max << "\n";
 
-    // // initialise all remaining singleton clusters to die at lambda = 0
-    // for(int c = 0; c < next_cluster_id; ++c){
-    //     if(parent[c] == c){
-    //         death_lambda[c] = 0;
-    //         stability[c]   += (birth_lambda[c] - death_lambda[c]) * sz[c];
-    //     }
-    // }
+    /* initialise all points as singleton clusters */
+    for(int i = 0; i < N_pts; ++i){
+        parent[i]        = i;
+        sz[i]            = 1;
+        birth_lambda[i]  = lambda_max;
+        death_lambda[i]  = 0;
+        stability[i]     = 0;
+    }
+    int next_cluster_id = N_pts;
+    std::cout << "[DEBUG] Initialized " << next_cluster_id << " singleton clusters\n";
 
-    // // 1) Build a list of candidate cluster IDs:
-    // std::vector<int> candidates;
-    // for(int c = 0; c < next_cluster_id; ++c) {
-    //     if (sz[c] >= min_cluster_size && death_lambda[c] > 0)  // <-- drop the root
-    //         candidates.push_back(c);
-    // }
+    // lambda to find root (path-compressed):
+    auto find_root = [&](int x){
+        int root = x;
+        while(parent[root] != root) root = parent[root];
+        while(parent[x] != root){
+            int next = parent[x];
+            parent[x] = root;
+            x = next;
+        }
+        return root;
+    };
 
+    // Build hierarchy
+    for(auto &e : mst_edges){
+        int c1 = find_root(e.u), c2 = find_root(e.v);
+        if(c1 == c2) continue;
 
-    // // 2) Sort them by descending stability:
-    // std::sort(candidates.begin(), candidates.end(),
-    //       [&](int a, int b){
-    //           return stability[a] > stability[b];
-    //       });
+        float lambda = 1.f / e.weight;
+        death_lambda[c1] = death_lambda[c2] = lambda;
+        stability[c1] += (birth_lambda[c1] - lambda) * sz[c1];
+        stability[c2] += (birth_lambda[c2] - lambda) * sz[c2];
 
-    
-    // // 3a) Pick the “most stable” clusters, skipping any whose direct children
-    // //     are already selected
-    // //     final clusters are built in descending stability as well
-    // std::vector<bool> is_selected(max_clusters, false);
-    // std::vector<int> final_clusters;
-    // for(int c : candidates) {
-    //     int L = left_child[c], R = right_child[c];
-    //     // if either child is itself a selected cluster, skip this one
-    //     if ((L >= N_pts && is_selected[L]) ||
-    //         (R >= N_pts && is_selected[R])) {
-    //     continue;
-    //     }
-    //     // otherwise select it
-    //     is_selected[c] = true;
-    //     final_clusters.push_back(c);
-    // }
-    // // 3b) Now assign each point to the first (most-stable) selected cluster it appears in
-    // std::vector<int> assignment(N_pts, -1);
-    // std::vector<std::vector<int>> clusters;
-    // for(int c : final_clusters){
-    //     // gather all member points under cluster c
-    //     std::vector<int> mem;
-    //     collect_members(c, N_pts, left_child, right_child, mem);
+        int c_new = next_cluster_id++;
+        parent[c1] = parent[c2] = c_new;
+        parent[c_new] = c_new;
+        sz[c_new]           = sz[c1] + sz[c2];
+        birth_lambda[c_new] = lambda;
+        stability[c_new]    = 0;
+        death_lambda[c_new] = 0;
+        left_child[c_new]   = c1;
+        right_child[c_new]  = c2;
 
-    //     // build this cluster’s final list of *newly* assigned points
-    //     std::vector<int> this_cluster;
-    //     for(int p : mem){
-    //         if(assignment[p] == -1){
-    //             assignment[p] = clusters.size();
-    //             this_cluster.push_back(p);
-    //         }
-    //     }
-    //     if(!this_cluster.empty())
-    //         clusters.push_back(std::move(this_cluster));
-    // }
+        std::cout << "[DEBUG] Merged clusters " << c1 << " and " << c2
+                << " into " << c_new << " at lambda=" << lambda << "\n";
+    }
+
+    std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
+
+    // Finalize singleton deaths
+    for(int c = 0; c < next_cluster_id; ++c){
+        if(parent[c] == c){
+            death_lambda[c] = 0;
+            stability[c]   += (birth_lambda[c] - 0) * sz[c];
+        }
+    }
+
+    // Collect candidates
+    std::vector<int> candidates;
+    for(int c = 0; c < next_cluster_id; ++c){
+        if(sz[c] >= min_cluster_size && death_lambda[c] > 0)
+            candidates.push_back(c);
+    }
+    std::cout << "[DEBUG] Number of candidate clusters (size>=" << min_cluster_size
+            << "): " << candidates.size() << "\n";
+
+    // Sort candidates by stability
+    std::sort(candidates.begin(), candidates.end(),
+        [&](int a, int b){ return stability[a] > stability[b]; });
+    std::cout << "[DEBUG] Top 5 candidate stabilities:";
+    for (int i = 0; i < std::min<int>(5, candidates.size()); ++i)
+        std::cout << " (" << candidates[i] << ":" << stability[candidates[i]] << ")";
+    std::cout << "\n";
+
+    // Select final clusters
+    std::vector<bool> is_selected(max_clusters, false);
+    std::vector<int> final_clusters;
+    for(int c : candidates) {
+        int L = left_child[c], R = right_child[c];
+        if ((L >= N_pts && is_selected[L]) || (R >= N_pts && is_selected[R])) {
+            std::cout << "[DEBUG] Skipping cluster " << c << " because child already selected\n";
+            continue;
+        }
+        is_selected[c] = true;
+        final_clusters.push_back(c);
+        std::cout << "[DEBUG] Selected cluster " << c << "\n";
+    }
+    std::cout << "[DEBUG] Total final clusters: " << final_clusters.size() << "\n";
+
+    // Assign points
+    std::vector<int> assignment(N_pts, -1);
+    std::vector<std::vector<int>> clusters;
+    for(int c : final_clusters){
+        std::vector<int> mem;
+        collect_members(c, N_pts, left_child, right_child, mem);
+        std::vector<int> this_cluster;
+        for(int p : mem){
+            if(assignment[p] == -1){
+                assignment[p] = clusters.size();
+                this_cluster.push_back(p);
+            }
+        }
+        if(!this_cluster.empty()){
+            clusters.push_back(std::move(this_cluster));
+            std::cout << "[DEBUG] Cluster " << (clusters.size()-1)
+                    << " got " << clusters.back().size() << " points\n";
+        }
+    }
 
     // 4) Output
     std::cout << "Found " << clusters.size()
@@ -437,5 +438,7 @@ int main(int argc, char** argv) {
     // Clean up
     if (result.mst) {
         free(result.mst);
+        std::cout << "[DEBUG] Freed MST memory\n";
     }
+
 }
