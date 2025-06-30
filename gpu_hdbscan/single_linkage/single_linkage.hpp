@@ -10,7 +10,10 @@ struct ClusterChoice {
     float total_stability;
     std::vector<int> selected_clusters;
     
+    // default c-tor
     ClusterChoice() : total_stability(0.0f) {}
+
+    // c-tor with arguments
     ClusterChoice(float stab, std::vector<int> clusters) 
         : total_stability(stab), selected_clusters(std::move(clusters)) {}
 };
