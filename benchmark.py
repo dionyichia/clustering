@@ -11,6 +11,10 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend suitable for headless environments
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from sklearn.preprocessing import StandardScaler
 
 class GPUHDBSCANWrapper:
     def __init__(self, executable_path="./gpu_hdbscan/build/gpu_hdbscan"):
@@ -125,9 +129,13 @@ def run_benchmark():
     results = []
     
     # Test datasets
-    # datasets = ['blobs', 'circles', 'moons', 'anisotropic']
-    datasets = ['blobs', 'anisotropic']
-    sample_sizes = [10000, 100000, 500000]
+    if not data_path:
+        # datasets = ['blobs', 'circles', 'moons', 'anisotropic']
+        datasets = ['blobs', 'anisotropic']
+        sample_sizes = [10000, 100000, 500000]
+    else:
+        datasets = ['actual data']
+        sample_sizes = [1189617] # Hardcoded to change TODO
     
     for data_type in datasets:
         for n_samples in sample_sizes:
@@ -304,17 +312,17 @@ def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=Fals
             results.append(result)
 
     # Create results DataFrame and save
-    df = pd.DataFrame(results)
-    df.to_csv(os.path.join(output_dir, 'gpu_hdbscan_benchmark_results.csv'), index=False)
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(os.path.join(output_dir, 'gpu_hdbscan_benchmark_results.csv'), index=False)
     
     # Print summary
     print("\n" + "="*60)
     print("BENCHMARK SUMMARY")
     print("="*60)
-    print(df.to_string(index=False))
+    print(results_df.to_string(index=False))
     
     # Plot results
-    plot_benchmark_results(df)
+    # plot_benchmark_results(results_df)
     
     return df
 
