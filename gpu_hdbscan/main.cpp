@@ -55,6 +55,8 @@ void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int tota
 int main(int argc, char** argv) {
   std::vector<int> ground_truth_labels;
   std::vector<Point> points;
+  std::set<int> skip_columns;
+  std::string input_filename;
   int dimensions = NULL;
   int k = NULL;
   int min_cluster_size = NULL;
@@ -96,19 +98,45 @@ int main(int argc, char** argv) {
               return 1;
           }
       }
-      else if (!strcmp(argv[i], "--input")) {
-            try{ 
-                points = readPointsFromFile(argv[i+1], dimensions, ground_truth_labels);  // Keep the labels
-                normalizePoints(points);
-                i += 2;
-                DEBUG_PRINT("Read " << points.size() << " points with " << dimensions << " dimensions." << "\n");
-                DEBUG_PRINT("Ground truth labels available: " << ground_truth_labels.size() << " labels." << "\n");
-            } catch(const std::exception& e) {
-                std::cerr << e.what() << "\n";
-                printUsage(argv[0]);
-                return 1;
+       else if (!strcmp(argv[i], "--skip-toa")) {
+        skip_columns.insert(0);  // TOA is typically column 0
+        i += 1;
+        DEBUG_PRINT("Will skip TOA column (index 0)\n");
+      }
+      else if (!strcmp(argv[i], "--skip-amp")) {
+        skip_columns.insert(3);  // Amp_S0 is typically column 3 based on your data format
+        i += 1;
+        DEBUG_PRINT("Will skip Amp column (index 3)\n");
+      }
+      else if (!strcmp(argv[i], "--skip-columns")) {
+        // Parse comma-separated list of column indices to skip
+        try {
+            std::string cols_str = argv[i+1];
+            std::stringstream ss(cols_str);
+            std::string col;
+            while (std::getline(ss, col, ',')) {
+                int col_idx = std::stoi(col);
+                skip_columns.insert(col_idx);
+                DEBUG_PRINT("Will skip column index " << col_idx << "\n");
             }
+            i += 2;
+        } catch(const std::exception& e) {
+            std::cerr << "Error parsing skip columns: " << e.what() << "\n";
+            printUsage(argv[0]);
+            return 1;
+        }
     }
+      else if (!strcmp(argv[i], "--input")) {
+        try{
+            input_filename = argv[i+1];  // Store filename for later use
+            i += 2;
+            DEBUG_PRINT("Input file: " << input_filename << "\n");
+        } catch(const std::exception& e) {
+            std::cerr << e.what() << "\n";
+            printUsage(argv[0]);
+            return 1;
+        }
+      }
       else if (!strcmp(argv[i], "--distMetric")){
           try{
               metricChoice = std::stoi(argv[i+1]);
@@ -181,6 +209,31 @@ int main(int argc, char** argv) {
       printUsage(argv[0]);
       return 1;
   }
+  if (input_filename.empty()) {
+    std::cerr << "Input file not specified\n";
+    printUsage(argv[0]);
+    return 1;
+}
+    try {
+        points = readPointsFromFile(input_filename, dimensions, ground_truth_labels, skip_columns);
+        normalizePoints(points);
+        DEBUG_PRINT("Read " << points.size() << " points with " << dimensions 
+                    << " dimensions (skipped " << skip_columns.size() << " columns).\n");
+        
+        // Print which columns were skipped
+        if (!skip_columns.empty() && !quiet_mode) {
+            DEBUG_PRINT("Skipped columns: ");
+            for (int col : skip_columns) {
+                DEBUG_PRINT(col << " ");
+            }
+            DEBUG_PRINT("\n");
+        }
+    } catch(const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        printUsage(argv[0]);
+        return 1;
+    }
+
 
 
   int N = points.size();

@@ -524,7 +524,7 @@ ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
 /**
  * Print clustering evaluation results
  */
-void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode = false) {
+void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode) {
     if (quiet_mode) {
         // Output only essential metrics for parsing
         std::cout << "EVAL_METRICS:"

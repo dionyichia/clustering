@@ -5,7 +5,7 @@
 #include <sstream>
 #include <string>
 #include <limits>
-
+#include <set>
 //------------------------------------------------------------------------------
 // Scale all points so that x and y each span [0,1]. 
 // If all x's (or y's) are equal, they get mapped to 0.0.
@@ -28,16 +28,19 @@ void normalizePoints(std::vector<Point>& pts) {
     }
   }
 }
-
 /**
- * Read `dimensions` features + 1 label (last column) from CSV.
- * If a line has fewer than dimensions+1 columns, it's skipped.
- * Always reads the last column as emitter ID, regardless of total columns.
+ * Read features from CSV, skipping specified columns and always using last column as emitter ID.
+ * @param filename: CSV file to read
+ * @param dimensions: number of feature dimensions to extract (after skipping columns)
+ * @param labels: output vector for emitter IDs
+ * @param skip_columns: set of column indices to skip (0-based, excluding the last column)
+ * @return vector of Points with selected features
  */
 std::vector<Point>
 readPointsFromFile(const std::string& filename,
                    int dimensions,
-                   std::vector<int>& labels)
+                   std::vector<int>& labels,
+                   const std::set<int>& skip_columns)
 {
     std::ifstream in(filename);
     if (!in) throw std::runtime_error("Unable to open file: " + filename);
@@ -56,20 +59,45 @@ readPointsFromFile(const std::string& filename,
                 tok.push_back(cell);
             }
         }
-        // need at least dimensions features + 1 label (last column)
-        if ((int)tok.size() < dimensions + 1) {
-            std::cerr << "Warning: too few columns (" 
-                      << tok.size() << "), need at least " 
-                      << dimensions + 1 << ", skipping line\n";
+        
+        // Count available feature columns (excluding last column and skip columns)
+        int available_features = 0;
+        for (int i = 0; i < (int)tok.size() - 1; ++i) {  // -1 to exclude last column (EmitterID)
+            if (skip_columns.find(i) == skip_columns.end()) {
+                available_features++;
+            }
+        }
+        
+        // Check if we have enough feature columns
+        if (available_features < dimensions) {
+            std::cerr << "Warning: not enough feature columns (" 
+                      << available_features << " available, " << dimensions 
+                      << " requested), skipping line\n";
             continue;
         }
-        // parse first `dimensions` features
+        
+        // Need at least one column for EmitterID
+        if ((int)tok.size() < 2) {
+            std::cerr << "Warning: too few total columns (" 
+                      << tok.size() << "), need at least 2, skipping line\n";
+            continue;
+        }
+        
+        // Parse features (skip specified columns and last column)
         Point p;
         p.reserve(dimensions);
         bool bad = false;
-        for (int i = 0; i < dimensions; ++i) {
+        int features_added = 0;
+        
+        for (int i = 0; i < (int)tok.size() - 1 && features_added < dimensions; ++i) {
+            // Skip if this column is in the skip set
+            if (skip_columns.find(i) != skip_columns.end()) {
+                continue;
+            }
+            
             try {
                 p.push_back(std::stod(tok[i]));
+                features_added++;
             } catch (...) {
                 std::cerr << "Warning: invalid float in col " 
                           << i << " ('" << tok[i] << "'), skipping line\n";
@@ -77,7 +105,9 @@ readPointsFromFile(const std::string& filename,
                 break;
             }
         }
-        if (bad) continue;
+        
+        if (bad || features_added != dimensions) continue;
+        
         // parse *last* token as label (emitter ID)
         int lbl;
         try {
@@ -95,15 +125,17 @@ readPointsFromFile(const std::string& filename,
 
 // Print CLI Usage Instructions
 void printUsage(char* prog) {
-  std::cerr << R"(Usage:
-    )" << prog << R"( --dimensions D --minpts K --input [FILENAME] --distMetric M --minkowskiP p --minclustersize min_cluster_size]
-
-Parameters:
-  --dimensions D   Number of features per data point (integer > 0)
-  --minpts K       Minimum points for core‐distance (integer > 0)
-  --input FILE     Path to input file
-  --distMetric M   Distance metric (1= Manhattan,2= Euclidean,3 = Chebyshev,4 = Minkowski)
-  --minkowskiP p   P-Value for Minkowski Distance
-  --minclustersize min_cluster_size minimum cluster size value for cluster extraction
-)";
+    std::cerr << "Usage: " << prog << " [options]\n";
+    std::cerr << "Options:\n";
+    std::cerr << "  --dimensions <int>      Number of feature dimensions to use\n";
+    std::cerr << "  --minpts <int>          Minimum points for core distance\n";
+    std::cerr << "  --input <filename>      Input CSV file\n";
+    std::cerr << "  --distMetric <int>      Distance metric (1:Manhattan, 2:Euclidean, 3:Chebyshev, 4:Minkowski)\n";
+    std::cerr << "  --minkowskiP <float>    P-value for Minkowski distance\n";
+    std::cerr << "  --minclustersize <int>  Minimum cluster size\n";
+    std::cerr << "  --skip-toa              Skip TOA column (index 0)\n";
+    std::cerr << "  --skip-amp              Skip Amplitude column (index 3)\n";
+    std::cerr << "  --skip-columns <list>   Skip specific columns (comma-separated indices)\n";
+    std::cerr << "  --quiet, -q             Suppress debug output\n";
+    std::cerr << "  --help, -h              Show this help message\n";
 }
