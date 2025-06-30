@@ -30,34 +30,67 @@ void normalizePoints(std::vector<Point>& pts) {
 }
 
 /**
- * Read points from a text or CSV file.
- *
- * Each non-empty line should contain features,
- * either separated by whitespace:
- *    1.23  4.56
- * or by comma:
- *    1.23,4.56
- *
- * Lines beginning with '#' or empty lines are skipped.
+ * Read `dimensions` features + 1 label (last column) from CSV.
+ * If a line has fewer than dimensions+1 columns, it's skipped.
+ * Always reads the last column as emitter ID, regardless of total columns.
  */
-std::vector<Point> readPointsFromFile(const std::string& filename, int dimensions) {
-  std::ifstream in(filename);
-  if (!in) throw std::runtime_error("Unable to open file");
-  std::vector<Point> pts;
-  std::string line;
-  while (std::getline(in, line)) {
-    if (line.empty() || line[0] == '#') continue;
-    std::replace(line.begin(), line.end(), ',', ' ');
-    std::istringstream iss(line);
-    Point p; double val;
-    while (iss >> val) p.push_back(val);
-    if ((int)p.size() != dimensions) {
-      std::cerr << "Warning: skipping line with wrong dimension\n";
-    } else {
-      pts.push_back(std::move(p));
+std::vector<Point>
+readPointsFromFile(const std::string& filename,
+                   int dimensions,
+                   std::vector<int>& labels)
+{
+    std::ifstream in(filename);
+    if (!in) throw std::runtime_error("Unable to open file: " + filename);
+    std::vector<Point> pts;
+    std::string line;
+    // skip header (first line)
+    std::getline(in, line);
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0]=='#') continue;
+        // tokenize on comma
+        std::vector<std::string> tok;
+        {
+            std::stringstream ss(line);
+            std::string cell;
+            while (std::getline(ss, cell, ',')) {
+                tok.push_back(cell);
+            }
+        }
+        // need at least dimensions features + 1 label (last column)
+        if ((int)tok.size() < dimensions + 1) {
+            std::cerr << "Warning: too few columns (" 
+                      << tok.size() << "), need at least " 
+                      << dimensions + 1 << ", skipping line\n";
+            continue;
+        }
+        // parse first `dimensions` features
+        Point p;
+        p.reserve(dimensions);
+        bool bad = false;
+        for (int i = 0; i < dimensions; ++i) {
+            try {
+                p.push_back(std::stod(tok[i]));
+            } catch (...) {
+                std::cerr << "Warning: invalid float in col " 
+                          << i << " ('" << tok[i] << "'), skipping line\n";
+                bad = true;
+                break;
+            }
+        }
+        if (bad) continue;
+        // parse *last* token as label (emitter ID)
+        int lbl;
+        try {
+            lbl = std::stoi(tok.back());
+        } catch (...) {
+            std::cerr << "Warning: invalid emitter ID '" 
+                      << tok.back() << "', skipping line\n";
+            continue;
+        }
+        pts.push_back(std::move(p));
+        labels.push_back(lbl);
     }
-  }
-  return pts;
+    return pts;
 }
 
 // Print CLI Usage Instructions

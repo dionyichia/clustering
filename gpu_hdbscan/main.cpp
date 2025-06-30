@@ -96,7 +96,8 @@ int main(int argc, char** argv) {
       }
       else if (!strcmp(argv[i], "--input")) {
           try{
-              points = readPointsFromFile(argv[i+1],dimensions);
+              std::vector<int> labels;
+              points = readPointsFromFile(argv[i+1],dimensions,labels);
               normalizePoints(points);
               i += 2;
               DEBUG_PRINT( "Read " << points.size() << " points." << "\n");

@@ -7,7 +7,8 @@
 void normalizePoints(std::vector<Point>& pts);
 
 /// Read whitespace‐ or comma‐separated points from a file
-std::vector<Point> readPointsFromFile(const std::string& filename, int dimensions);
+std::vector<Point>
+readPointsFromFile(const std::string& filename,int dimensions,std::vector<int>& labels);
 
 /// Print usage and warnings
 void printUsage(char* prog);
