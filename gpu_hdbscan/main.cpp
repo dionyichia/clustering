@@ -57,6 +57,7 @@ int main(int argc, char** argv) {
   std::vector<Point> points;
   std::set<int> skip_columns;
   std::string input_filename;
+  int noBenchMark = 0;
   int dimensions = NULL;
   int k = NULL;
   int min_cluster_size = NULL;
@@ -189,33 +190,42 @@ int main(int argc, char** argv) {
             DEBUG_PRINT("Quiet mode enabled" << std::endl);  // This won't print since quiet_mode is now true
             i += 1;  // Only increment by 1 since there's no argument after --quiet
         }
-      else {
+      else if (!strcmp(argv[i], "--noBenchMark")){
+        noBenchMark = 1;
+        i += 1;
+      }
+        else {
           // unrecognized flag: skip just the flag
           std::cerr << "Warning: unknown option '" << argv[i] << "\n";
           printUsage(argv[0]);
           i += 1;
       }
   }
-  if (k == NULL){
-      k = 2;
-  }
-  if (dimensions == NULL){
-      std::cerr << "Dimensions Of Data Not Provided" << "\n";
-      printUsage(argv[0]);
-      return 1;
-  }
-  if (metric == DistanceMetric::Minkowski && minkowskiP == NULL){
-      std::cerr << "P-Value not provided" << "\n";
-      printUsage(argv[0]);
-      return 1;
-  }
-  if (input_filename.empty()) {
-    std::cerr << "Input file not specified\n";
-    printUsage(argv[0]);
-    return 1;
-}
+    if (k == NULL){
+        k = 2;
+    }
+    if (dimensions == NULL){
+        std::cerr << "Dimensions Of Data Not Provided" << "\n";
+        printUsage(argv[0]);
+        return 1;
+    }
+    if (metric == DistanceMetric::Minkowski && minkowskiP == NULL){
+        std::cerr << "P-Value not provided" << "\n";
+        printUsage(argv[0]);
+        return 1;
+    }
+    if (input_filename.empty()) {
+        std::cerr << "Input file not specified\n";
+        printUsage(argv[0]);
+        return 1;
+    }
     try {
-        points = readPointsFromFile(input_filename, dimensions, ground_truth_labels, skip_columns);
+        if(noBenchMark){
+            points = readPointsFromFile(input_filename, dimensions, ground_truth_labels, skip_columns);
+        }
+        else{
+            points = readPointsFromFile(input_filename, dimensions, skip_columns);
+        }
         normalizePoints(points);
         DEBUG_PRINT("Read " << points.size() << " points with " << dimensions 
                     << " dimensions (skipped " << skip_columns.size() << " columns).\n");
