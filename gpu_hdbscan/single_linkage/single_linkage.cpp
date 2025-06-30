@@ -255,30 +255,30 @@ std::vector<std::vector<int>> single_linkage_clustering(
     }
     std::cout << "Total stability: " << total_selected_stability << std::endl;
 
-    // Validation: ensure no overlapping clusters
-    for(size_t i = 0; i < final_clusters.size(); ++i) {
-        for(size_t j = i + 1; j < final_clusters.size(); ++j) {
-            int c1 = final_clusters[i], c2 = final_clusters[j];
+    // // Validation: ensure no overlapping clusters
+    // for(size_t i = 0; i < final_clusters.size(); ++i) {
+    //     for(size_t j = i + 1; j < final_clusters.size(); ++j) {
+    //         int c1 = final_clusters[i], c2 = final_clusters[j];
             
-            // Function to check if c1 is ancestor of c2
-            std::function<bool(int, int)> is_ancestor = [&](int ancestor, int descendant) -> bool {
-                if(descendant < N_pts) return false; // Leaf nodes
-                int L = left_child[descendant], R = right_child[descendant];
-                if(L == ancestor || R == ancestor) return true;
-                if(L >= N_pts && is_ancestor(ancestor, L)) return true;
-                if(R >= N_pts && is_ancestor(ancestor, R)) return true;
-                return false;
-            };
+    //         // Function to check if c1 is ancestor of c2
+    //         std::function<bool(int, int)> is_ancestor = [&](int ancestor, int descendant) -> bool {
+    //             if(descendant < N_pts) return false; // Leaf nodes
+    //             int L = left_child[descendant], R = right_child[descendant];
+    //             if(L == ancestor || R == ancestor) return true;
+    //             if(L >= N_pts && is_ancestor(ancestor, L)) return true;
+    //             if(R >= N_pts && is_ancestor(ancestor, R)) return true;
+    //             return false;
+    //         };
             
-            if(is_ancestor(c1, c2) || is_ancestor(c2, c1)) {
-                std::cerr << "[ERROR] Overlapping clusters detected: " << c1 
-                        << " and " << c2 << " have ancestor-descendant relationship!" << std::endl;
-            }
-        }
-    }
+    //         if(is_ancestor(c1, c2) || is_ancestor(c2, c1)) {
+    //             std::cerr << "[ERROR] Overlapping clusters detected: " << c1 
+    //                     << " and " << c2 << " have ancestor-descendant relationship!" << std::endl;
+    //         }
+    //     }
+    // }
 
-    std::cout << "Cluster selection validation: " 
-            << (final_clusters.size() > 0 ? "PASSED" : "FAILED") << std::endl;
+    // std::cout << "Cluster selection validation: " 
+    //         << (final_clusters.size() > 0 ? "PASSED" : "FAILED") << std::endl;
 
 
     // Assign points to clusters
@@ -300,19 +300,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
             std::cout << "[DEBUG] Cluster " << (clusters.size()-1)
                     << " got " << clusters.back().size() << " points\n";
         }
-    }
-
-    std::cout << "Single linkage clustering completed." << std::endl;
-
-    // Output results
-    std::cout << "Found " << clusters.size()
-              << " clusters (min size = " << min_cluster_size << ")\n";
-    for(size_t i = 0; i < clusters.size(); ++i){
-        std::cout << "Cluster " << i << " (" 
-                  << clusters[i].size() << " points): ";
-        for(int p : clusters[i])
-            std::cout << p << " ";
-        std::cout << "\n";
     }
 
     return clusters;
