@@ -96,6 +96,33 @@ def generate_test_data(data_type='blobs', n_samples=1000):
     X = StandardScaler().fit_transform(X)
     return X, y
 
+def add_gaussian_noise(data, snr_db=None, std=None):
+    """
+    Add Gaussian noise to a dataset.
+
+    Parameters:
+    - data: numpy array or pandas DataFrame
+    - snr_db: desired Signal-to-Noise Ratio in dB. If set, overrides std.
+    - std: standard deviation of the noise. Used only if snr_db is None.
+
+    Returns:
+    - noisy_data: data with added Gaussian noise
+    """
+    data_array = data.to_numpy() if isinstance(data, pd.DataFrame) else np.array(data)
+    signal_power = np.mean(data_array ** 2)
+
+    if snr_db is not None:
+        snr_linear = 10 ** (snr_db / 10)
+        noise_power = signal_power / snr_linear
+        std = np.sqrt(noise_power)
+
+    noise = np.random.normal(loc=0.0, scale=std, size=data_array.shape)
+    noisy_data = data_array + noise
+
+    if isinstance(data, pd.DataFrame):
+        return pd.DataFrame(noisy_data, columns=data.columns)
+    return noisy_data
+
 def track_performance(func, *args, **kwargs):
     """Track execution time and memory usage"""
     process = psutil.Process()
@@ -204,7 +231,7 @@ def run_benchmark():
     
     return df
 
-def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=False):
+def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=False, signal_noise_ratio=False):
     """Enhanced benchmark function with cluster visualization"""
     # Define output folder
     output_dir = "benchmark_outputs"
@@ -220,10 +247,14 @@ def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=Fals
     # Results storage
     results = []
     
-    # Test datasets
-    datasets = ['blobs', 'anisotropic']
-    sample_sizes = [10000, 100000]  # Reduced for faster testing
-    
+    # Test datasets\
+    if not data_path:
+        datasets = ['blobs', 'anisotropic']
+        sample_sizes = [10000, 100000]  # Reduced for faster testing
+    else:
+        datasets = ['actual data']
+        sample_sizes = [1189617] # Hardcoded num row TODO 
+
     for data_type in datasets:
         for n_samples in sample_sizes:
             print(f"\nTesting {data_type} dataset with {n_samples} samples...")
@@ -233,12 +264,14 @@ def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=Fals
                 X, true_labels = generate_test_data(data_type, n_samples)
             else:
                 df = pd.read_csv(data_path) 
-
                 feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
+
                 if use_amp:
                     feature_cols.append('Amp_S0(dBm)')
                 if use_toa:
                     feature_cols.append('TOA(ns)')
+                if signal_noise_ratio:
+                    df = add_gaussian_noise(df, snr_db=signal_noise_ratio)
 
                 X = df[feature_cols].to_numpy()
                 true_labels = df['EmitterId'].to_numpy()
@@ -762,12 +795,14 @@ if __name__ == "__main__":
     
     # Run benchmark
     # if data path provided will use data file else will generate 2d data.
-    data_path = "./extracted_data.txt"
+    data_path = "./gpu_hdbscan_edited/build/pdwInterns.csv"
+    signal_noise_ratio = 20
+
     if not os.path.exists(data_path):
         print(f"Data not found at {data_path}")
         results = run_benchmark_with_visualization(data_path=None)
     else:
-        results = run_benchmark_with_visualization(data_path=data_path)
+        results = run_benchmark_with_visualization(data_path=data_path, use_amp=False, use_toa=False, signal_noise_ratio=signal_noise_ratio)
 
     print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
     print("Plots saved to 'gpu_hdbscan_benchmark.png'")
