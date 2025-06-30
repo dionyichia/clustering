@@ -8,6 +8,10 @@
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
 #include <thrust/copy.h>
+#include <map>
+#include <set>
+#include <cmath>
+#include <iomanip>
 
 // Recursively gather all original points under cluster `c`.
 void collect_members(int c,
@@ -303,4 +307,250 @@ std::vector<std::vector<int>> single_linkage_clustering(
     }
 
     return clusters;
+}
+
+// Helper function to calculate entropy
+double calculateEntropy(const std::vector<int>& labels) {
+    std::map<int, int> counts;
+    for (int label : labels) {
+        counts[label]++;
+    }
+    
+    double entropy = 0.0;
+    int total = labels.size();
+    for (const auto& pair : counts) {
+        if (pair.second > 0) {
+            double p = static_cast<double>(pair.second) / total;
+            entropy -= p * std::log2(p);
+        }
+    }
+    return entropy;
+}
+
+// Helper function to calculate mutual information
+double calculateMutualInformation(const std::vector<int>& true_labels, 
+                                const std::vector<int>& pred_labels) {
+    std::map<std::pair<int, int>, int> joint_counts;
+    std::map<int, int> true_counts, pred_counts;
+    
+    int n = true_labels.size();
+    for (int i = 0; i < n; ++i) {
+        joint_counts[{true_labels[i], pred_labels[i]}]++;
+        true_counts[true_labels[i]]++;
+        pred_counts[pred_labels[i]]++;
+    }
+    
+    double mi = 0.0;
+    for (const auto& joint_pair : joint_counts) {
+        int true_label = joint_pair.first.first;
+        int pred_label = joint_pair.first.second;
+        int joint_count = joint_pair.second;
+        
+        double p_xy = static_cast<double>(joint_count) / n;
+        double p_x = static_cast<double>(true_counts[true_label]) / n;
+        double p_y = static_cast<double>(pred_counts[pred_label]) / n;
+        
+        if (p_xy > 0 && p_x > 0 && p_y > 0) {
+            mi += p_xy * std::log2(p_xy / (p_x * p_y));
+        }
+    }
+    return mi;
+}
+
+// Calculate Adjusted Rand Index
+double calculateAdjustedRandIndex(const std::vector<int>& true_labels, 
+                                const std::vector<int>& pred_labels) {
+    int n = true_labels.size();
+    std::map<std::pair<int, int>, int> contingency;
+    std::map<int, int> true_counts, pred_counts;
+    
+    // Build contingency table
+    for (int i = 0; i < n; ++i) {
+        contingency[{true_labels[i], pred_labels[i]}]++;
+        true_counts[true_labels[i]]++;
+        pred_counts[pred_labels[i]]++;
+    }
+    
+    // Calculate components for ARI formula
+    double sum_comb_c = 0.0;  // sum of C(n_ij, 2)
+    for (const auto& pair : contingency) {
+        int count = pair.second;
+        if (count >= 2) {
+            sum_comb_c += static_cast<double>(count * (count - 1)) / 2.0;
+        }
+    }
+    
+    double sum_comb_a = 0.0;  // sum of C(a_i, 2)
+    for (const auto& pair : true_counts) {
+        int count = pair.second;
+        if (count >= 2) {
+            sum_comb_a += static_cast<double>(count * (count - 1)) / 2.0;
+        }
+    }
+    
+    double sum_comb_b = 0.0;  // sum of C(b_j, 2)
+    for (const auto& pair : pred_counts) {
+        int count = pair.second;
+        if (count >= 2) {
+            sum_comb_b += static_cast<double>(count * (count - 1)) / 2.0;
+        }
+    }
+    
+    double total_comb = static_cast<double>(n * (n - 1)) / 2.0;
+    
+    double expected_index = (sum_comb_a * sum_comb_b) / total_comb;
+    double max_index = (sum_comb_a + sum_comb_b) / 2.0;
+    
+    if (max_index - expected_index == 0) {
+        return 0.0;  // Perfect agreement or no agreement possible
+    }
+    
+    return (sum_comb_c - expected_index) / (max_index - expected_index);
+}
+
+// Calculate best matching accuracy using Hungarian algorithm approximation
+double calculateBestMatchingAccuracy(const std::vector<int>& true_labels, 
+                                   const std::vector<int>& pred_labels) {
+    // Build confusion matrix
+    std::set<int> true_set(true_labels.begin(), true_labels.end());
+    std::set<int> pred_set(pred_labels.begin(), pred_labels.end());
+    
+    std::map<int, std::map<int, int>> confusion;
+    for (int i = 0; i < true_labels.size(); ++i) {
+        confusion[true_labels[i]][pred_labels[i]]++;
+    }
+    
+    // Greedy assignment (simple approximation of Hungarian algorithm)
+    std::set<int> used_pred;
+    int correct = 0;
+    
+    // For each true cluster, find the best matching predicted cluster
+    for (int true_cluster : true_set) {
+        int best_pred = -1;
+        int best_count = 0;
+        
+        for (const auto& pred_pair : confusion[true_cluster]) {
+            int pred_cluster = pred_pair.first;
+            int count = pred_pair.second;
+            
+            if (used_pred.find(pred_cluster) == used_pred.end() && count > best_count) {
+                best_count = count;
+                best_pred = pred_cluster;
+            }
+        }
+        
+        if (best_pred != -1) {
+            used_pred.insert(best_pred);
+            correct += best_count;
+        }
+    }
+    
+    return static_cast<double>(correct) / true_labels.size();
+}
+
+/**
+ * Evaluate clustering results against ground truth labels
+ * @param true_labels: Ground truth cluster labels from CSV
+ * @param predicted_clusters: Clusters generated by single linkage algorithm
+ * @param total_points: Total number of data points
+ * @return ClusterMetrics structure with various evaluation metrics
+ */
+ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
+                                const std::vector<std::vector<int>>& predicted_clusters,
+                                int total_points) {
+    
+    ClusterMetrics metrics;
+    
+    // Convert predicted clusters to label format
+    std::vector<int> pred_labels(total_points, -1);  // -1 for noise/unassigned
+    for (int cluster_id = 0; cluster_id < predicted_clusters.size(); ++cluster_id) {
+        for (int point_id : predicted_clusters[cluster_id]) {
+            if (point_id >= 0 && point_id < total_points) {
+                pred_labels[point_id] = cluster_id;
+            }
+        }
+    }
+    
+    // Basic statistics
+    metrics.total_points = total_points;
+    metrics.num_predicted_clusters = predicted_clusters.size();
+    std::set<int> unique_true(true_labels.begin(), true_labels.end());
+    metrics.num_true_clusters = unique_true.size();
+    
+    // Calculate entropies
+    double h_true = calculateEntropy(true_labels);
+    double h_pred = calculateEntropy(pred_labels);
+    
+    // Calculate mutual information
+    double mi = calculateMutualInformation(true_labels, pred_labels);
+    
+    // Normalized Mutual Information
+    if (h_true + h_pred > 0) {
+        metrics.normalized_mutual_info = 2.0 * mi / (h_true + h_pred);
+    } else {
+        metrics.normalized_mutual_info = 0.0;
+    }
+    
+    // Homogeneity and Completeness
+    if (h_pred > 0) {
+        metrics.homogeneity = mi / h_pred;
+    } else {
+        metrics.homogeneity = 1.0;  // Perfect homogeneity if only one cluster
+    }
+    
+    if (h_true > 0) {
+        metrics.completeness = mi / h_true;
+    } else {
+        metrics.completeness = 1.0;  // Perfect completeness if only one true cluster
+    }
+    
+    // V-measure (harmonic mean of homogeneity and completeness)
+    if (metrics.homogeneity + metrics.completeness > 0) {
+        metrics.v_measure = 2.0 * (metrics.homogeneity * metrics.completeness) / 
+                           (metrics.homogeneity + metrics.completeness);
+    } else {
+        metrics.v_measure = 0.0;
+    }
+    
+    // Adjusted Rand Index
+    metrics.adjusted_rand_index = calculateAdjustedRandIndex(true_labels, pred_labels);
+    
+    // Best matching accuracy
+    metrics.accuracy = calculateBestMatchingAccuracy(true_labels, pred_labels);
+    
+    return metrics;
+}
+
+/**
+ * Print clustering evaluation results
+ */
+void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode = false) {
+    if (quiet_mode) {
+        // Output only essential metrics for parsing
+        std::cout << "EVAL_METRICS:"
+                  << " ARI=" << metrics.adjusted_rand_index
+                  << " NMI=" << metrics.normalized_mutual_info
+                  << " ACC=" << metrics.accuracy
+                  << " V_MEASURE=" << metrics.v_measure
+                  << std::endl;
+    } else {
+        std::cout << "\n=== Clustering Evaluation Results ===" << std::endl;
+        std::cout << "Total points: " << metrics.total_points << std::endl;
+        std::cout << "True clusters: " << metrics.num_true_clusters << std::endl;
+        std::cout << "Predicted clusters: " << metrics.num_predicted_clusters << std::endl;
+        std::cout << "\nMetrics:" << std::endl;
+        std::cout << "  Adjusted Rand Index: " << std::fixed << std::setprecision(4) 
+                  << metrics.adjusted_rand_index << std::endl;
+        std::cout << "  Normalized Mutual Info: " << std::fixed << std::setprecision(4) 
+                  << metrics.normalized_mutual_info << std::endl;
+        std::cout << "  Homogeneity: " << std::fixed << std::setprecision(4) 
+                  << metrics.homogeneity << std::endl;
+        std::cout << "  Completeness: " << std::fixed << std::setprecision(4) 
+                  << metrics.completeness << std::endl;
+        std::cout << "  V-measure: " << std::fixed << std::setprecision(4) 
+                  << metrics.v_measure << std::endl;
+        std::cout << "  Best Matching Accuracy: " << std::fixed << std::setprecision(4) 
+                  << metrics.accuracy << std::endl;
+        std::cout << "===================================" << std::endl;
+    }
 }
