@@ -15,6 +15,7 @@
 #include "kd_tree/include/types.hpp"
 #include "boruvka/boruvka.hpp" 
 #include "single_linkage/single_linkage.hpp"
+#include <iomanip>
 
 // QUIET MODE to silence debug statements
 bool quiet_mode = false;
@@ -36,11 +37,11 @@ void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int tota
     }
     
     // ALWAYS output cluster labels (needed for Python parsing)
-    std::cout << "CLUSTER_LABELS:";
-    for (int i = 0; i < labels.size(); ++i) {
-        std::cout << " " << labels[i];
-    }
-    std::cout << std::endl;
+    // std::cout << "CLUSTER_LABELS:";
+    // for (int i = 0; i < labels.size(); ++i) {
+    //     std::cout << " " << labels[i];
+    // }
+    // std::cout << std::endl;
     
     // Output cluster statistics (conditional)
     DEBUG_PRINT("CLUSTER_STATS:" << std::endl);
@@ -52,6 +53,7 @@ void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int tota
 }
 
 int main(int argc, char** argv) {
+  std::vector<int> ground_truth_labels;
   std::vector<Point> points;
   int dimensions = NULL;
   int k = NULL;
@@ -95,18 +97,18 @@ int main(int argc, char** argv) {
           }
       }
       else if (!strcmp(argv[i], "--input")) {
-          try{
-              std::vector<int> labels;
-              points = readPointsFromFile(argv[i+1],dimensions,labels);
-              normalizePoints(points);
-              i += 2;
-              DEBUG_PRINT( "Read " << points.size() << " points." << "\n");
-          } catch(const std::exception& e) {
-              std::cerr << e.what() << "\n";
-              printUsage(argv[0]);
-              return 1;
-          }
-      }
+            try{ 
+                points = readPointsFromFile(argv[i+1], dimensions, ground_truth_labels);  // Keep the labels
+                normalizePoints(points);
+                i += 2;
+                DEBUG_PRINT("Read " << points.size() << " points with " << dimensions << " dimensions." << "\n");
+                DEBUG_PRINT("Ground truth labels available: " << ground_truth_labels.size() << " labels." << "\n");
+            } catch(const std::exception& e) {
+                std::cerr << e.what() << "\n";
+                printUsage(argv[0]);
+                return 1;
+            }
+    }
       else if (!strcmp(argv[i], "--distMetric")){
           try{
               metricChoice = std::stoi(argv[i+1]);
@@ -326,6 +328,13 @@ int main(int argc, char** argv) {
     DEBUG_PRINT( "Single linkage clustering completed." << "\n");
 
 
+    if (!ground_truth_labels.empty() && ground_truth_labels.size() == N_pts) {
+        ClusterMetrics metrics = evaluateClustering(ground_truth_labels, clusters, N_pts);
+        printClusteringEvaluation(metrics, quiet_mode);
+    } else {
+        DEBUG_PRINT("Warning: Ground truth labels not available or size mismatch. Skipping evaluation." << "\n");
+        DEBUG_PRINT("Ground truth size: " << ground_truth_labels.size() << ", Points size: " << N_pts << "\n");
+    }
     // Output cluster labels for Python parsing
     outputClusterLabels(clusters, N_pts);
 
@@ -337,179 +346,3 @@ int main(int argc, char** argv) {
 
     return 0;  // Add return statement
 }
-
-    // // Set min_cluster_size if not already set
-    // if (min_cluster_size == NULL) {
-    //     min_cluster_size = 2;  // or use k as default
-    // }
-
-    // // Call the single linkage clustering function
-    // std::vector<std::vector<int>> clusters = single_linkage_clustering(
-    //     mst_edges, 
-    //     N_pts, 
-    //     min_cluster_size
-    // );
-
-    // DEBUG_PRINT( "Single linkage clustering completed." << "\n");
-
-    // /* 
-    //     COPY OUTPUT FROM BORUVKA INTO GPU AND RUN THRUST SORT, SHOULD BE FASTER
-    //     BUT WILL INCUR COPY FROM HOST TO DEVICE COST
-    // */
-    // // assume `mst_edges` is your input vector<Edge> of size N–1
-    // DEBUG_PRINT( "[DEBUG] Before sort, first few weights:";
-    // for (int i = 0; i < std::min<size_t>(5, mst_edges.size()); ++i)
-    //     DEBUG_PRINT( " " << mst_edges[i].weight;
-    // DEBUG_PRINT( "\n";
-
-    // std::sort(mst_edges.begin(), mst_edges.end(),
-    //             [] (const Edge &a, const Edge &b) { return a.weight < b.weight; });
-
-    // DEBUG_PRINT( "[DEBUG] After sort, smallest 5 weights:";
-    // for (int i = 0; i < std::min<size_t>(5, mst_edges.size()); ++i)
-    //     DEBUG_PRINT( " " << mst_edges[i].weight;
-    // DEBUG_PRINT( "\n";
-
-    // // After sorting:
-    // assert(!mst_edges.empty());
-    // for (auto &e : mst_edges) {
-    //     assert(e.u >= 0 && e.u < N_pts);
-    //     assert(e.v >= 0 && e.v < N_pts);
-    //     assert(e.weight > 0);
-    // }
-    // DEBUG_PRINT( "[DEBUG] Edge assertions passed.\n";
-
-    // int max_clusters = 2 * N_pts;
-    // std::vector<int> parent(max_clusters), sz(max_clusters);
-    // std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters), stability(max_clusters);
-    // std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
-
-    // float smallest_weight = mst_edges.front().weight;
-    // DEBUG_PRINT( "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
-    // if (smallest_weight <= 0.f) {
-    //     smallest_weight = std::numeric_limits<float>::min();
-    //     DEBUG_PRINT( "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
-    // }
-
-    // float lambda_max = 1.f / smallest_weight;
-    // DEBUG_PRINT( "[DEBUG] lambda_max: " << lambda_max << "\n";
-
-    // /* initialise all points as singleton clusters */
-    // for(int i = 0; i < N_pts; ++i){
-    //     parent[i]        = i;
-    //     sz[i]            = 1;
-    //     birth_lambda[i]  = lambda_max;
-    //     death_lambda[i]  = 0;
-    //     stability[i]     = 0;
-    // }
-    // int next_cluster_id = N_pts;
-    // DEBUG_PRINT( "[DEBUG] Initialized " << next_cluster_id << " singleton clusters\n";
-
-    // // lambda to find root (path-compressed):
-    // auto find_root = [&](int x){
-    //     int root = x;
-    //     while(parent[root] != root) root = parent[root];
-    //     while(parent[x] != root){
-    //         int next = parent[x];
-    //         parent[x] = root;
-    //         x = next;
-    //     }
-    //     return root;
-    // };
-
-    // // Build hierarchy
-    // for(auto &e : mst_edges){
-    //     int c1 = find_root(e.u), c2 = find_root(e.v);
-    //     if(c1 == c2) continue;
-
-    //     float lambda = 1.f / e.weight;
-    //     death_lambda[c1] = death_lambda[c2] = lambda;
-    //     stability[c1] += (birth_lambda[c1] - lambda) * sz[c1];
-    //     stability[c2] += (birth_lambda[c2] - lambda) * sz[c2];
-
-    //     int c_new = next_cluster_id++;
-    //     parent[c1] = parent[c2] = c_new;
-    //     parent[c_new] = c_new;
-    //     sz[c_new]           = sz[c1] + sz[c2];
-    //     birth_lambda[c_new] = lambda;
-    //     stability[c_new]    = 0;
-    //     death_lambda[c_new] = 0;
-    //     left_child[c_new]   = c1;
-    //     right_child[c_new]  = c2;
-
-    //     DEBUG_PRINT( "[DEBUG] Merged clusters " << c1 << " and " << c2
-    //             << " into " << c_new << " at lambda=" << lambda << "\n";
-    // }
-
-    // DEBUG_PRINT( "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
-
-    // // Finalize singleton deaths
-    // for(int c = 0; c < next_cluster_id; ++c){
-    //     if(parent[c] == c){
-    //         death_lambda[c] = 0;
-    //         stability[c]   += (birth_lambda[c] - 0) * sz[c];
-    //     }
-    // }
-
-    // // Collect candidates
-    // std::vector<int> candidates;
-    // for(int c = 0; c < next_cluster_id; ++c){
-    //     if(sz[c] >= min_cluster_size && death_lambda[c] > 0)
-    //         candidates.push_back(c);
-    // }
-    // DEBUG_PRINT( "[DEBUG] Number of candidate clusters (size>=" << min_cluster_size
-    //         << "): " << candidates.size() << "\n";
-
-    // // Sort candidates by stability
-    // std::sort(candidates.begin(), candidates.end(),
-    //     [&](int a, int b){ return stability[a] > stability[b]; });
-    // DEBUG_PRINT( "[DEBUG] Top 5 candidate stabilities:";
-    // for (int i = 0; i < std::min<int>(5, candidates.size()); ++i)
-    //     DEBUG_PRINT( " (" << candidates[i] << ":" << stability[candidates[i]] << ")";
-    // DEBUG_PRINT( "\n";
-
-    // // Select final clusters
-    // std::vector<bool> is_selected(max_clusters, false);
-    // std::vector<int> final_clusters;
-    // for(int c : candidates) {
-    //     int L = left_child[c], R = right_child[c];
-    //     if ((L >= N_pts && is_selected[L]) || (R >= N_pts && is_selected[R])) {
-    //         DEBUG_PRINT( "[DEBUG] Skipping cluster " << c << " because child already selected\n";
-    //         continue;
-    //     }
-    //     is_selected[c] = true;
-    //     final_clusters.push_back(c);
-    //     DEBUG_PRINT( "[DEBUG] Selected cluster " << c << "\n";
-    // }
-    // DEBUG_PRINT( "[DEBUG] Total final clusters: " << final_clusters.size() << "\n";
-
-    // // Assign points
-    // std::vector<int> assignment(N_pts, -1);
-    // std::vector<std::vector<int>> clusters;
-    // for(int c : final_clusters){
-    //     std::vector<int> mem;
-    //     collect_members(c, N_pts, left_child, right_child, mem);
-    //     std::vector<int> this_cluster;
-    //     for(int p : mem){
-    //         if(assignment[p] == -1){
-    //             assignment[p] = clusters.size();
-    //             this_cluster.push_back(p);
-    //         }
-    //     }
-    //     if(!this_cluster.empty()){
-    //         clusters.push_back(std::move(this_cluster));
-    //         DEBUG_PRINT( "[DEBUG] Cluster " << (clusters.size()-1)
-    //                 << " got " << clusters.back().size() << " points\n";
-    //     }
-    // }
-
-    // // 4) Output
-    // DEBUG_PRINT( "Found " << clusters.size()
-    //         << " clusters (min size = " << min_cluster_size << ")\n";
-    // for(size_t i = 0; i < clusters.size(); ++i){
-    //     DEBUG_PRINT( "Cluster " << i << " (" 
-    //             << clusters[i].size() << " points): ";
-    //     for(int p : clusters[i])
-    //         DEBUG_PRINT( p << " ";
-    //     DEBUG_PRINT( "\n";
-    // }
