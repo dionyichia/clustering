@@ -8,6 +8,9 @@ from sklearn.cluster import HDBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend suitable for headless environments
+import matplotlib.pyplot as plt
 
 class GPUHDBSCANWrapper:
     def __init__(self, executable_path="./gpu_hdbscan/build/gpu_hdbscan"):
@@ -122,7 +125,8 @@ def run_benchmark():
     results = []
     
     # Test datasets
-    datasets = ['blobs', 'circles', 'moons', 'anisotropic']
+    # datasets = ['blobs', 'circles', 'moons', 'anisotropic']
+    datasets = ['blobs', 'anisotropic']
     sample_sizes = [10000, 100000, 500000]
     
     for data_type in datasets:
@@ -188,82 +192,574 @@ def run_benchmark():
     print(df.to_string(index=False))
     
     # Plot results
-    # plot_benchmark_results(df)
+    plot_benchmark_results(df)
     
     return df
 
-# def plot_benchmark_results(df):
-#     """Plot benchmark results"""
-#     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=False):
+    """Enhanced benchmark function with cluster visualization"""
+    # Define output folder
+    output_dir = "benchmark_outputs"
+    os.makedirs(output_dir, exist_ok=True)
     
-#     # Time comparison
-#     datasets = df['Dataset'].unique()
-#     x = np.arange(len(datasets))
-#     width = 0.25
+    # Initialize algorithms
+    gpu_hdbscan = GPUHDBSCANWrapper()
     
-#     gpu_times = df.groupby('Dataset')['GPU_Time'].mean()
-#     sklearn_times = df.groupby('Dataset')['Sklearn_Time'].mean()
+    # Test parameters
+    min_samples = 5
+    min_cluster_size = 50
     
-#     axes[0,0].bar(x - width, gpu_times, width, label='GPU HDBSCAN', alpha=0.8)
-#     axes[0,0].bar(x, sklearn_times, width, label='Sklearn HDBSCAN', alpha=0.8)
-#     axes[0,0].set_xlabel('Dataset')
-#     axes[0,0].set_ylabel('Time (seconds)')
-#     axes[0,0].set_title('Execution Time Comparison')
-#     axes[0,0].set_xticks(x)
-#     axes[0,0].set_xticklabels(datasets)
-#     axes[0,0].legend()
-#     axes[0,0].set_yscale('log')
+    # Results storage
+    results = []
     
-#     # Memory comparison
-#     gpu_memory = df.groupby('Dataset')['GPU_Memory'].mean()
-#     sklearn_memory = df.groupby('Dataset')['Sklearn_Memory'].mean()
+    # Test datasets
+    datasets = ['blobs', 'anisotropic']
+    sample_sizes = [10000, 100000]  # Reduced for faster testing
     
-#     axes[0,1].bar(x - width, gpu_memory, width, label='GPU HDBSCAN', alpha=0.8)
-#     axes[0,1].bar(x, sklearn_memory, width, label='Sklearn HDBSCAN', alpha=0.8)
-#     axes[0,1].set_xlabel('Dataset')
-#     axes[0,1].set_ylabel('Memory (MB)')
-#     axes[0,1].set_title('Memory Usage Comparison')
-#     axes[0,1].set_xticks(x)
-#     axes[0,1].set_xticklabels(datasets)
-#     axes[0,1].legend()
+    for data_type in datasets:
+        for n_samples in sample_sizes:
+            print(f"\nTesting {data_type} dataset with {n_samples} samples...")
+            
+            # If no data provided, generate data
+            if data_path is None:
+                X, true_labels = generate_test_data(data_type, n_samples)
+            else:
+                df = pd.read_csv(data_path) 
+
+                feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
+                if use_amp:
+                    feature_cols.append('Amp_S0(dBm)')
+                if use_toa:
+                    feature_cols.append('TOA(ns)')
+
+                X = df[feature_cols].to_numpy()
+                true_labels = df['EmitterId'].to_numpy()
+            
+            feature_names = feature_cols if data_path is not None else ['Feature 1', 'Feature 2']
+            
+            # Test GPU HDBSCAN
+            print("Running GPU HDBSCAN...")
+            try:
+                gpu_labels, gpu_time, gpu_memory = track_performance(
+                    gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size
+                )
+                gpu_success = True
+                
+                # VISUALIZE CLUSTERS - This is the new part!
+                if gpu_success and len(np.unique(gpu_labels)) > 1:
+                    print("Creating cluster visualizations...")
+                    
+                    # Basic 2D plot
+                    plot_clusters_2d(X, gpu_labels, 
+                                    feature_names=['Feature 1', 'Feature 2'],
+                                    title=f"GPU HDBSCAN: {data_type} dataset ({n_samples} samples)",
+                                    save_path=os.path.join(output_dir, f"gpu_clusters_{data_type}_{n_samples}.png"))
+                    
+                    # Comprehensive analysis
+                    analysis_results = comprehensive_cluster_analysis(
+                        X, gpu_labels, 
+                        feature_names=['Feature 1', 'Feature 2'],
+                        save_prefix=os.path.join(output_dir, f"gpu_analysis_{data_type}_{n_samples}")
+                    )
+                    
+                    print(f"Cluster analysis saved with prefix: gpu_analysis_{data_type}_{n_samples}")
+                
+            except Exception as e:
+                print(f"GPU HDBSCAN failed: {e}")
+                gpu_labels, gpu_time, gpu_memory = np.array([]), float('inf'), 0
+                gpu_success = False
+            
+            # Test sklearn HDBSCAN
+            print("Running sklearn HDBSCAN...")
+            sklearn_hdbscan = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+            sklearn_labels, sklearn_time, sklearn_memory = track_performance(
+                sklearn_hdbscan.fit_predict, X
+            )
+            
+            # Visualize sklearn results too for comparison
+            if len(np.unique(sklearn_labels)) > 1:
+                plot_clusters_2d(X, sklearn_labels, 
+                                feature_names=['Feature 1', 'Feature 2'],
+                                title=f"Sklearn HDBSCAN: {data_type} dataset ({n_samples} samples)",
+                                save_path=os.path.join(output_dir, f"sklearn_clusters_{data_type}_{n_samples}.png"))
+            
+            # Store results (same as before)
+            result = {
+                'Dataset': data_type,
+                'Samples': n_samples,
+                'GPU_Time': gpu_time,
+                'Sklearn_Time': sklearn_time,
+                'GPU_Memory': gpu_memory,
+                'Sklearn_Memory': sklearn_memory,
+                'GPU_Success': gpu_success,
+                'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0) if gpu_success else 0,
+                'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
+            }
+            
+            if gpu_success and sklearn_time > 0:
+                result['Speedup_vs_Sklearn'] = sklearn_time / gpu_time
+            else:
+                result['Speedup_vs_Sklearn'] = 0
+            
+            results.append(result)
+
+    # Create results DataFrame and save
+    df = pd.DataFrame(results)
+    df.to_csv(os.path.join(output_dir, 'gpu_hdbscan_benchmark_results.csv'), index=False)
     
-#     # Speedup visualization
-#     speedup_sklearn = df.groupby('Dataset')['Speedup_vs_Sklearn'].mean()
+    # Print summary
+    print("\n" + "="*60)
+    print("BENCHMARK SUMMARY")
+    print("="*60)
+    print(df.to_string(index=False))
     
-#     axes[1,0].bar(x - width/2, speedup_sklearn, width, label='vs Sklearn', alpha=0.8)
-#     axes[1,0].set_xlabel('Dataset')
-#     axes[1,0].set_ylabel('Speedup Factor')
-#     axes[1,0].set_title('GPU HDBSCAN Speedup')
-#     axes[1,0].set_xticks(x)
-#     axes[1,0].set_xticklabels(datasets)
-#     axes[1,0].legend()
-#     axes[1,0].axhline(y=1, color='red', linestyle='--', alpha=0.7)
+    # Plot results
+    plot_benchmark_results(df)
     
-#     # Scaling with data size
-#     for dataset in datasets:
-#         subset = df[df['Dataset'] == dataset]
-#         axes[1,1].plot(subset['Samples'], subset['GPU_Time'], 'o-', label=f'GPU {dataset}', alpha=0.8)
-#         axes[1,1].plot(subset['Samples'], subset['Sklearn_Time'], 's--', label=f'Sklearn {dataset}', alpha=0.8)
+    return df
+
+def plot_benchmark_results(df):
+    """Plot benchmark results"""
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     
-#     axes[1,1].set_xlabel('Number of Samples')
-#     axes[1,1].set_ylabel('Time (seconds)')
-#     axes[1,1].set_title('Scaling with Data Size')
-#     axes[1,1].set_yscale('log')
-#     axes[1,1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    datasets = df['Dataset'].unique()
+    x = np.arange(len(datasets))
+    width = 0.25
     
-#     plt.tight_layout()
-#     plt.savefig('gpu_hdbscan_benchmark.png', dpi=300, bbox_inches='tight')
-#     plt.show()
+    # Time comparison
+    gpu_times = df.groupby('Dataset')['GPU_Time'].mean()
+    sklearn_times = df.groupby('Dataset')['Sklearn_Time'].mean()
+    
+    axes[0, 0].bar(x - width, gpu_times, width, label='GPU HDBSCAN', alpha=0.8)
+    axes[0, 0].bar(x, sklearn_times, width, label='Sklearn HDBSCAN', alpha=0.8)
+    axes[0, 0].set_xlabel('Dataset')
+    axes[0, 0].set_ylabel('Time (seconds)')
+    axes[0, 0].set_title('Execution Time Comparison')
+    axes[0, 0].set_xticks(x)
+    axes[0, 0].set_xticklabels(datasets)
+    axes[0, 0].legend()
+    axes[0, 0].set_yscale('log')
+    
+    # Memory comparison
+    gpu_memory = df.groupby('Dataset')['GPU_Memory'].mean()
+    sklearn_memory = df.groupby('Dataset')['Sklearn_Memory'].mean()
+    
+    axes[0, 1].bar(x - width, gpu_memory, width, label='GPU HDBSCAN', alpha=0.8)
+    axes[0, 1].bar(x, sklearn_memory, width, label='Sklearn HDBSCAN', alpha=0.8)
+    axes[0, 1].set_xlabel('Dataset')
+    axes[0, 1].set_ylabel('Memory (MB)')
+    axes[0, 1].set_title('Memory Usage Comparison')
+    axes[0, 1].set_xticks(x)
+    axes[0, 1].set_xticklabels(datasets)
+    axes[0, 1].legend()
+    
+    # Speedup visualization
+    speedup_sklearn = df.groupby('Dataset')['Speedup_vs_Sklearn'].mean()
+    
+    axes[1, 0].bar(x - width / 2, speedup_sklearn, width, label='vs Sklearn', alpha=0.8)
+    axes[1, 0].set_xlabel('Dataset')
+    axes[1, 0].set_ylabel('Speedup Factor')
+    axes[1, 0].set_title('GPU HDBSCAN Speedup')
+    axes[1, 0].set_xticks(x)
+    axes[1, 0].set_xticklabels(datasets)
+    axes[1, 0].legend()
+    axes[1, 0].axhline(y=1, color='red', linestyle='--', alpha=0.7)
+    
+    # Scaling with data size
+    for dataset in datasets:
+        subset = df[df['Dataset'] == dataset]
+        axes[1, 1].plot(subset['Samples'], subset['GPU_Time'], 'o-', label=f'GPU {dataset}', alpha=0.8)
+        axes[1, 1].plot(subset['Samples'], subset['Sklearn_Time'], 's--', label=f'Sklearn {dataset}', alpha=0.8)
+    
+    axes[1, 1].set_xlabel('Number of Samples')
+    axes[1, 1].set_ylabel('Time (seconds)')
+    axes[1, 1].set_title('Scaling with Data Size')
+    axes[1, 1].set_yscale('log')
+    axes[1, 1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    plt.tight_layout()
+    plt.savefig('gpu_hdbscan_benchmark.png', dpi=300, bbox_inches='tight')
+
+def plot_clusters_2d(X, labels, feature_names=None, title="GPU HDBSCAN Clustering Results", 
+                     save_path=None, use_plotly=False):
+    """
+    Plot 2D clustering results using the first two features (pulse width and frequency)
+    
+    Parameters:
+    -----------
+    X : array-like, shape (n_samples, n_features)
+        Data points (will use first 2 dimensions)
+    labels : array-like, shape (n_samples,)
+        Cluster labels from GPU HDBSCAN
+    feature_names : list, optional
+        Names of features for axis labels
+    title : str
+        Plot title
+    save_path : str, optional
+        Path to save the plot
+    use_plotly : bool
+        Whether to use Plotly for interactive plots
+    """
+    
+    # Use first two dimensions
+    X_2d = X[:, :2]
+    
+    # Set default feature names
+    if feature_names is None:
+        feature_names = ['Pulse Width', 'Frequency']
+    
+    # Get unique clusters (excluding noise if present)
+    unique_labels = np.unique(labels)
+    n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
+    noise_count = np.sum(labels == -1)
+    
+    print(f"Found {n_clusters} clusters and {noise_count} noise points")
+    
+    if use_plotly:
+        # Create interactive Plotly plot
+        df_plot = pd.DataFrame({
+            feature_names[0]: X_2d[:, 0],
+            feature_names[1]: X_2d[:, 1],
+            'Cluster': labels.astype(str)
+        })
+        
+        # Create color map for clusters
+        colors = px.colors.qualitative.Set1
+        color_map = {}
+        for i, label in enumerate(unique_labels):
+            if label == -1:
+                color_map[str(label)] = 'black'  # Noise points in black
+            else:
+                color_map[str(label)] = colors[i % len(colors)]
+        
+        fig = px.scatter(
+            df_plot,
+            x=feature_names[0],
+            y=feature_names[1],
+            color='Cluster',
+            title=f"{title}<br>Clusters: {n_clusters}, Noise points: {noise_count}",
+            color_discrete_map=color_map,
+            width=800,
+            height=600
+        )
+        
+        fig.update_traces(marker=dict(size=6, opacity=0.7))
+        fig.show()
+        
+        if save_path:
+            fig.write_html(save_path.replace('.png', '.html'))
+            
+    else:
+        # Create matplotlib plot
+        plt.figure(figsize=(12, 8))
+        
+        # Create color map
+        colors = plt.cm.Set1(np.linspace(0, 1, len(unique_labels)))
+        
+        for i, label in enumerate(unique_labels):
+            if label == -1:
+                # Plot noise points
+                mask = labels == label
+                plt.scatter(X_2d[mask, 0], X_2d[mask, 1], 
+                           c='black', marker='x', s=50, alpha=0.6, label='Noise')
+            else:
+                # Plot cluster points
+                mask = labels == label
+                plt.scatter(X_2d[mask, 0], X_2d[mask, 1], 
+                           c=[colors[i]], s=60, alpha=0.7, label=f'Cluster {label}')
+        
+        plt.xlabel(feature_names[0])
+        plt.ylabel(feature_names[1])
+        plt.title(f"{title}\nClusters: {n_clusters}, Noise points: {noise_count}")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        plt.show()
+
+def visualize_high_dimensional_clusters(X, labels, feature_names=None, 
+                                       method='pca', title="High-Dimensional Clustering",
+                                       save_path=None):
+    """
+    Visualize high-dimensional clustering results using dimensionality reduction
+    
+    Parameters:
+    -----------
+    X : array-like, shape (n_samples, n_features)
+        Data points
+    labels : array-like, shape (n_samples,)
+        Cluster labels
+    feature_names : list, optional
+        Names of features
+    method : str
+        Dimensionality reduction method ('pca' or 'tsne')
+    title : str
+        Plot title
+    save_path : str, optional
+        Path to save the plot
+    """
+    
+    if feature_names is None:
+        feature_names = [f'Feature_{i}' for i in range(X.shape[1])]
+    
+    # Standardize the data
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Apply dimensionality reduction
+    if method == 'pca':
+        reducer = PCA(n_components=2)
+        X_reduced = reducer.fit_transform(X_scaled)
+        explained_var = reducer.explained_variance_ratio_
+        method_title = f"PCA (Explained variance: {explained_var[0]:.2f}, {explained_var[1]:.2f})"
+    elif method == 'tsne':
+        reducer = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X)//4))
+        X_reduced = reducer.fit_transform(X_scaled)
+        method_title = "t-SNE"
+    else:
+        raise ValueError("Method must be 'pca' or 'tsne'")
+    
+    # Plot the results
+    unique_labels = np.unique(labels)
+    n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
+    noise_count = np.sum(labels == -1)
+    
+    plt.figure(figsize=(12, 8))
+    colors = plt.cm.Set1(np.linspace(0, 1, len(unique_labels)))
+    
+    for i, label in enumerate(unique_labels):
+        if label == -1:
+            mask = labels == label
+            plt.scatter(X_reduced[mask, 0], X_reduced[mask, 1], 
+                       c='black', marker='x', s=50, alpha=0.6, label='Noise')
+        else:
+            mask = labels == label
+            plt.scatter(X_reduced[mask, 0], X_reduced[mask, 1], 
+                       c=[colors[i]], s=60, alpha=0.7, label=f'Cluster {label}')
+    
+    plt.xlabel(f'{method_title} Component 1')
+    plt.ylabel(f'{method_title} Component 2')
+    plt.title(f"{title} - {method_title}\nClusters: {n_clusters}, Noise points: {noise_count}")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    plt.show()
+    
+    return X_reduced
+
+def evaluate_clustering_quality(X, labels, feature_names=None):
+    """
+    Evaluate clustering quality using multiple metrics
+    
+    Parameters:
+    -----------
+    X : array-like, shape (n_samples, n_features)
+        Data points
+    labels : array-like, shape (n_samples,)
+        Cluster labels
+    feature_names : list, optional
+        Names of features
+    
+    Returns:
+    --------
+    dict : Dictionary containing evaluation metrics
+    """
+    
+    if feature_names is None:
+        feature_names = [f'Feature_{i}' for i in range(X.shape[1])]
+    
+    # Remove noise points for evaluation
+    mask = labels != -1
+    X_clean = X[mask]
+    labels_clean = labels[mask]
+    
+    unique_labels = np.unique(labels)
+    n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
+    noise_count = np.sum(labels == -1)
+    total_points = len(labels)
+    
+    metrics = {
+        'n_clusters': n_clusters,
+        'n_noise_points': noise_count,
+        'noise_ratio': noise_count / total_points,
+        'total_points': total_points
+    }
+    
+    # Calculate metrics only if we have valid clusters
+    if n_clusters > 1 and len(labels_clean) > 0:
+        try:
+            metrics['silhouette_score'] = silhouette_score(X_clean, labels_clean)
+            metrics['calinski_harabasz_score'] = calinski_harabasz_score(X_clean, labels_clean)
+            metrics['davies_bouldin_score'] = davies_bouldin_score(X_clean, labels_clean)
+        except Exception as e:
+            print(f"Warning: Could not calculate some metrics: {e}")
+            metrics['silhouette_score'] = None
+            metrics['calinski_harabasz_score'] = None
+            metrics['davies_bouldin_score'] = None
+    else:
+        metrics['silhouette_score'] = None
+        metrics['calinski_harabasz_score'] = None
+        metrics['davies_bouldin_score'] = None
+    
+    # Print results
+    print("\n" + "="*50)
+    print("CLUSTERING EVALUATION METRICS")
+    print("="*50)
+    print(f"Number of clusters: {metrics['n_clusters']}")
+    print(f"Number of noise points: {metrics['n_noise_points']}")
+    print(f"Noise ratio: {metrics['noise_ratio']:.3f}")
+    print(f"Total points: {metrics['total_points']}")
+    
+    if metrics['silhouette_score'] is not None:
+        print(f"\nQuality Metrics:")
+        print(f"Silhouette Score: {metrics['silhouette_score']:.3f} (higher is better, range: [-1, 1])")
+        print(f"Calinski-Harabasz Score: {metrics['calinski_harabasz_score']:.3f} (higher is better)")
+        print(f"Davies-Bouldin Score: {metrics['davies_bouldin_score']:.3f} (lower is better)")
+    else:
+        print("\nQuality metrics could not be calculated (need at least 2 clusters)")
+    
+    return metrics
+
+def create_cluster_summary_table(X, labels, feature_names=None):
+    """
+    Create a summary table of cluster statistics
+    
+    Parameters:
+    -----------
+    X : array-like, shape (n_samples, n_features)
+        Data points
+    labels : array-like, shape (n_samples,)
+        Cluster labels
+    feature_names : list, optional
+        Names of features
+    
+    Returns:
+    --------
+    pd.DataFrame : Summary statistics for each cluster
+    """
+    
+    if feature_names is None:
+        feature_names = [f'Feature_{i}' for i in range(X.shape[1])]
+    
+    unique_labels = np.unique(labels)
+    summary_data = []
+    
+    for label in unique_labels:
+        mask = labels == label
+        cluster_data = X[mask]
+        
+        cluster_info = {
+            'Cluster': 'Noise' if label == -1 else f'Cluster {label}',
+            'Size': np.sum(mask),
+            'Percentage': np.sum(mask) / len(labels) * 100
+        }
+        
+        # Add statistics for each feature
+        for i, feature_name in enumerate(feature_names):
+            cluster_info[f'{feature_name}_Mean'] = np.mean(cluster_data[:, i])
+            cluster_info[f'{feature_name}_Std'] = np.std(cluster_data[:, i])
+            cluster_info[f'{feature_name}_Min'] = np.min(cluster_data[:, i])
+            cluster_info[f'{feature_name}_Max'] = np.max(cluster_data[:, i])
+        
+        summary_data.append(cluster_info)
+    
+    summary_df = pd.DataFrame(summary_data)
+    
+    print("\n" + "="*80)
+    print("CLUSTER SUMMARY STATISTICS")
+    print("="*80)
+    print(summary_df.to_string(index=False, float_format='%.3f'))
+    
+    return summary_df
+
+def comprehensive_cluster_analysis(X, labels, feature_names=None, save_prefix="cluster_analysis"):
+    """
+    Perform comprehensive cluster analysis including visualization and evaluation
+    
+    Parameters:
+    -----------
+    X : array-like, shape (n_samples, n_features)
+        Data points
+    labels : array-like, shape (n_samples,)
+        Cluster labels from GPU HDBSCAN
+    feature_names : list, optional
+        Names of features
+    save_prefix : str
+        Prefix for saved files
+    
+    Returns:
+    --------
+    dict : Dictionary containing all analysis results
+    """
+    
+    if feature_names is None:
+        if X.shape[1] == 4:
+            feature_names = ['Pulse Width', 'Frequency', 'Azimuth', 'Elevation']
+        else:
+            feature_names = [f'Feature_{i}' for i in range(X.shape[1])]
+    
+    results = {}
+    
+    # 1. 2D visualization using first two features
+    print("Creating 2D visualization...")
+    plot_clusters_2d(X, labels, feature_names[:2], 
+                     title="GPU HDBSCAN: Pulse Width vs Frequency",
+                     save_path=f"{save_prefix}_2d.png")
+    
+    # 2. High-dimensional visualization if needed
+    if X.shape[1] > 2:
+        print("Creating PCA visualization...")
+        X_pca = visualize_high_dimensional_clusters(X, labels, feature_names, 
+                                                   method='pca',
+                                                   title="GPU HDBSCAN: PCA Projection",
+                                                   save_path=f"{save_prefix}_pca.png")
+        results['X_pca'] = X_pca
+        
+        print("Creating t-SNE visualization...")
+        X_tsne = visualize_high_dimensional_clusters(X, labels, feature_names, 
+                                                    method='tsne',
+                                                    title="GPU HDBSCAN: t-SNE Projection",
+                                                    save_path=f"{save_prefix}_tsne.png")
+        results['X_tsne'] = X_tsne
+    
+    # 3. Evaluate clustering quality
+    print("Evaluating clustering quality...")
+    metrics = evaluate_clustering_quality(X, labels, feature_names)
+    results['metrics'] = metrics
+    
+    # 4. Create cluster summary table
+    print("Creating cluster summary...")
+    summary_df = create_cluster_summary_table(X, labels, feature_names)
+    results['summary'] = summary_df
+    
+    # Save summary to CSV
+    summary_df.to_csv(f"{save_prefix}_summary.csv", index=False)
+    
+    return results
 
 if __name__ == "__main__":
     # Make sure your executable is built
-    executable_path = "./gpu_hdbscan/build/gpu_hdbscan"
+    executable_path = "./gpu_hdbscan_edited/build/gpu_hdbscan"
     if not os.path.exists(executable_path):
         print(f"Executable not found at {executable_path}")
         print("Please run 'make' to build the project first")
         exit(1)
     
     # Run benchmark
-    results = run_benchmark()
+    # if data path provided will use data file else will generate 2d data.
+    data_path = "./extracted_data.txt"
+    if not os.path.exists(data_path):
+        print(f"Data not found at {data_path}")
+        results = run_benchmark_with_visualization(data_path=None)
+    else:
+        results = run_benchmark_with_visualization(data_path=data_path)
+
     print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
     print("Plots saved to 'gpu_hdbscan_benchmark.png'")
