@@ -1,10 +1,9 @@
 import subprocess
-import sys
 import numpy as np
 import time
 import psutil
 import os
-import tempfile
+from typing import List, Dict
 from sklearn.cluster import HDBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
@@ -128,6 +127,9 @@ def generate_test_data(data_type='blobs', n_samples=1000):
         X, y = make_blobs(n_samples=n_samples, centers=10, n_features=2, random_state=42)
         transformation = [[0.6, -0.6], [-0.4, 0.8]]
         X = np.dot(X, transformation)
+    else:
+        print("Invalid data type for generation: ", data_type)
+        return None, None
     
     X = StandardScaler().fit_transform(X)
     return X, y
@@ -191,93 +193,123 @@ def track_performance(func, *args, **kwargs):
     
     return result, execution_time, memory_used
 
-def run_benchmark(executable_path=None):
-    """Main benchmark function"""
-    # Initialize algorithms
-    gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
+
+def batch_data(data_path: str, batch_interval: float = 2.0, 
+               chunk_size: int = 10000, assume_sorted: bool = True) -> List[Dict[str, any]]:
+    """
+    Memory-efficient version for very large datasets that processes data in chunks.
     
-    # Test parameters
-    min_samples = 3
-    min_cluster_size = 50
+    Args:
+        data_path (str): Path to the CSV data file
+        batch_interval (float): Time interval in seconds for batching
+        chunk_size (int): Number of rows to process at once
+        assume_sorted (bool): Whether to assume data is pre-sorted by TOA
     
-    # Results storage
-    results = []
+    Returns:
+        List of dictionaries in TestConfig format with keys:
+        - name: str
+        - data_type: str  
+        - data_path: str
+        - sample_size: int
+        - batch_number: int
+        - time_range: tuple
+    """
     
-    # Test datasets
-    if not data_path:
-        # datasets = ['blobs', 'circles', 'moons', 'anisotropic']
-        datasets = ['blobs', 'anisotropic']
-        sample_sizes = [10000, 100000, 500000]
-    else:
-        datasets = ['actual data']
-        sample_sizes = [1189617] # Hardcoded to change TODO
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found at: {data_path}")
     
-    for data_type in datasets:
-        for n_samples in sample_sizes:
-            print(f"\nTesting {data_type} dataset with {n_samples} samples...")
+    if batch_interval <= 0:
+        batch_interval = 2.0
+    
+    # Create batch directory
+    batch_dir = os.path.join(os.path.dirname(data_path), 'batch_data')
+    os.makedirs(batch_dir, exist_ok=True)
+    
+    test_configs = []
+    current_batch = 1
+    current_batch_data = []
+    batch_start_time = None
+    batch_end_time = None
+    
+    try:
+        # Process file in chunks
+        for chunk in pd.read_csv(data_path, chunksize=chunk_size):
+            if 'TOA(ns)' not in chunk.columns:
+                raise ValueError("Required column 'TOA(ns)' not found")
             
-            # Generate data
-            X, true_labels = generate_test_data(data_type, n_samples)
+            # Convert TOA (sort only if not pre-sorted)
+            chunk['TOA_seconds'] = chunk['TOA(ns)'] / 1e9
+            if not assume_sorted:
+                chunk = chunk.sort_values('TOA_seconds')
             
-            # Test GPU HDBSCAN
-            print("Running GPU HDBSCAN...")
-            try:
-                gpu_labels, gpu_time, gpu_memory = track_performance(
-                    gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size
-                )
-                gpu_success = True
-            except Exception as e:
-                print(f"GPU HDBSCAN failed: {e}")
-                gpu_labels, gpu_time, gpu_memory = np.array([]), float('inf'), 0
-                gpu_success = False
+            # Set initial batch start time
+            if batch_start_time is None:
+                batch_start_time = chunk['TOA_seconds'].iloc[0]
             
-            # Test sklearn HDBSCAN
-            print("Running sklearn HDBSCAN...")
-            sklearn_hdbscan = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
-            sklearn_labels, sklearn_time, sklearn_memory = track_performance(
-                sklearn_hdbscan.fit_predict, X
+            for _, row in chunk.iterrows():
+                current_time = row['TOA_seconds']
+                
+                # Check if we need to start a new batch
+                if current_time > batch_start_time + batch_interval:
+                    # Save current batch if it has data
+                    if current_batch_data:
+                        batch_end_time = current_batch_data[-1]['TOA(ns)'] / 1e9
+                        config = _save_batch_and_create_config(
+                            current_batch_data, batch_dir, current_batch, 
+                            batch_start_time, batch_end_time
+                        )
+                        test_configs.append(config)
+                        current_batch_data = []
+                        current_batch += 1
+                    
+                    # Update batch start time
+                    batch_start_time = current_time
+                
+                # Add row to current batch (remove helper column)
+                row_dict = row.drop('TOA_seconds').to_dict()
+                current_batch_data.append(row_dict)
+        
+        # Save final batch
+        if current_batch_data:
+            batch_end_time = current_batch_data[-1]['TOA(ns)'] / 1e9
+            config = _save_batch_and_create_config(
+                current_batch_data, batch_dir, current_batch,
+                batch_start_time, batch_end_time
             )
-            
-            # Store results
-            result = {
-                'Dataset': data_type,
-                'Samples': n_samples,
-                'GPU_Time': gpu_time,
-                'Sklearn_Time': sklearn_time,
-                'GPU_Memory': gpu_memory,
-                'Sklearn_Memory': sklearn_memory,
-                'GPU_Success': gpu_success,
-                'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0) if gpu_success else 0,
-                'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
-            }
-            
-            if gpu_success and sklearn_time > 0:
-                result['Speedup_vs_Sklearn'] = sklearn_time / gpu_time
-            else:
-                result['Speedup_vs_Sklearn'] = 0
-            
-            results.append(result)
-            
-            print(f"Results for {data_type} ({n_samples} samples):")
-            print(f"  GPU: {gpu_time:.4f}s, {gpu_memory:.2f}MB, {result['GPU_Clusters']} clusters")
-            print(f"  Sklearn: {sklearn_time:.4f}s, {sklearn_memory:.2f}MB, {result['Sklearn_Clusters']} clusters")
-            if gpu_success:
-                print(f"  Speedup vs Sklearn: {result['Speedup_vs_Sklearn']:.2f}x")
+            test_configs.append(config)
+        
+        print(f"Memory-efficient processing complete: {len(test_configs)} batches created")
+        return test_configs
+        
+    except Exception as e:
+        raise RuntimeError(f"Error in memory-efficient processing: {e}")
+
+
+def _save_batch_and_create_config(batch_data: List[Dict], batch_dir: str, batch_num: int,
+                                    start_time: float, end_time: float) -> Dict[str, any]:
+    """
+    Helper function to save a batch of data and create a TestConfig dictionary.
     
-    # Create results DataFrame and save
-    df = pd.DataFrame(results)
-    df.to_csv('gpu_hdbscan_benchmark_results.csv', index=False)
+    Returns:
+        Dictionary in TestConfig format
+    """
+    # Save batch file
+    batch_df = pd.DataFrame(batch_data)
+    batch_filename = f"Data_Batch_{batch_num}.csv"
+    batch_file_path = os.path.join(batch_dir, batch_filename)
+    batch_df.to_csv(batch_file_path, index=False)
     
-    # Print summary
-    print("\n" + "="*60)
-    print("BENCHMARK SUMMARY")
-    print("="*60)
-    print(df.to_string(index=False))
+    # Create TestConfig dictionary
+    config = {
+        'name': f"Data_Batch_{batch_num}_{len(batch_data)}samples",
+        'data_type': f"Data_Batch_{batch_num}",
+        'data_path': batch_file_path,
+        'sample_size': len(batch_data),
+        'batch_number': batch_num,
+        'time_range': (start_time, end_time)
+    }
     
-    # Plot results
-    plot_benchmark_results(df)
-    
-    return df
+    return config
 
 def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
     """Enhanced benchmark function with cluster visualization"""
@@ -292,105 +324,124 @@ def run_benchmark_with_visualization(data_path=None, executable_path=None, use_a
     min_samples = 3
     min_cluster_size = 50
     quiet_mode = True
+    batch_interval = 2.0 # Interval used in batching
     
     # Results storage
     results = []
     
-    # Test datasets\
+    # Test datasets
     if not data_path:
-        datasets = ['blobs', 'anisotropic']
-        sample_sizes = [10000, 100000]  # Reduced for faster testing
-    else:
-        datasets = ['actual data']
-        sample_sizes = [1189617] # Hardcoded num row TODO 
+        print("Data file not found, generating data...")
 
-
-    for data_type in datasets:
-        for n_samples in sample_sizes:
-            print(f"\nTesting {data_type} dataset with {n_samples} samples...")
-            
-            # If no data provided, generate data
-            if data_path is None:
-                X, true_labels = generate_test_data(data_type, n_samples)
-            else:
-                df = pd.read_csv(data_path)  
-                feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
-
-                if use_amp:
-                    feature_cols.append('Amp_S0(dBm)')
-                if use_toa:
-                    feature_cols.append('TOA(ns)')
-
-                X = df[feature_cols].to_numpy()
-                true_labels = df['EmitterId'].to_numpy()
-            
-            feature_names = feature_cols if data_path is not None else ['Feature 1', 'Feature 2']
-            
-            # Test GPU HDBSCAN
-            print("Running GPU HDBSCAN...")
-            try:
-                gpu_labels, gpu_time, gpu_memory = track_performance(
-                    gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size, quiet_mode=quiet_mode
-                )
-                gpu_success = True
-                
-                # VISUALIZE CLUSTERS - This is the new part!
-                if gpu_success and len(np.unique(gpu_labels)) > 1:
-                    print("Creating cluster visualizations...")
-                    
-                    # Basic 2D plot
-                    plot_clusters_2d(X, gpu_labels, 
-                                    feature_names=['Feature 1', 'Feature 2'],
-                                    title=f"GPU HDBSCAN: {data_type} dataset ({n_samples} samples)",
-                                    save_path=os.path.join(output_dir, f"gpu_clusters_{data_type}_{n_samples}.png"))
-                    
-                    # Comprehensive analysis
-                    analysis_results = comprehensive_cluster_analysis(
-                        X, gpu_labels, 
-                        feature_names=['Feature 1', 'Feature 2'],
-                        save_prefix=os.path.join(output_dir, f"gpu_analysis_{data_type}_{n_samples}")
-                    )
-                    
-                    print(f"Cluster analysis saved with prefix: gpu_analysis_{data_type}_{n_samples}")
-                
-            except Exception as e:
-                print(f"GPU HDBSCAN failed: {e}")
-                gpu_labels, gpu_time, gpu_memory = np.array([]), float('inf'), 0
-                gpu_success = False
-            
-            # Test sklearn HDBSCAN
-            print("Running sklearn HDBSCAN...")
-            sklearn_hdbscan = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
-            sklearn_labels, sklearn_time, sklearn_memory = track_performance(
-                sklearn_hdbscan.fit_predict, X
-            )
-            
-            # Visualize sklearn results too for comparison
-            if len(np.unique(sklearn_labels)) > 1:
-                plot_clusters_2d(X, sklearn_labels, 
-                                feature_names=['Feature 1', 'Feature 2'],
-                                title=f"Sklearn HDBSCAN: {data_type} dataset ({n_samples} samples)",
-                                save_path=os.path.join(output_dir, f"sklearn_clusters_{data_type}_{n_samples}.png"))
-            
-            # Store results (same as before)
-            result = {
-                'Dataset': data_type,
-                'Samples': n_samples,
-                'GPU_Time': gpu_time,
-                'Sklearn_Time': sklearn_time,
-                'GPU_Memory': gpu_memory,
-                'Sklearn_Memory': sklearn_memory,
-                'GPU_Success': gpu_success,
-                'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0) if gpu_success else 0,
-                'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
+        data = [
+            {
+                'name': 'blobs_100k',
+                'type': 'blobs',
+                'data_path': None,
+                'sample_size': 100000,
+            },
+            {
+                'name': 'anisotropic_100k', 
+                'type': 'anisotropic',
+                'data_path': None,
+                'sample_size': 1000000,
             }
+        ]
+
+    else:
+        print("Data file found")
+
+        # Chunk size can be taken as the maximum number of points in a batch
+        data = batch_data(data_path=data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
+        
+    for dataset in data:
+        data_type = dataset.get('type')
+        n_samples = dataset.get('sample_size')
+
+        print(f"\nTesting {dataset.get('name')} dataset with {n_samples} samples...")
+        
+        # If no data provided, generate data
+        if data_path is None:
+            X, true_labels = generate_test_data(data_type, n_samples)
+        else:
+            df = pd.read_csv(dataset.get('data_path'))  
+            feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
+
+            if use_amp:
+                feature_cols.append('Amp_S0(dBm)')
+            if use_toa:
+                feature_cols.append('TOA(ns)')
+
+            X = df[feature_cols].to_numpy()
+            true_labels = df['EmitterId'].to_numpy()
+        
+        feature_names = feature_cols if data_path is not None else ['Feature 1', 'Feature 2']
+        
+        # Test GPU HDBSCAN
+        print("Running GPU HDBSCAN...")
+        try:
+            gpu_labels, gpu_time, gpu_memory = track_performance(
+                gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size, quiet_mode=quiet_mode
+            )
+            gpu_success = True
             
-            if gpu_success and sklearn_time > 0:
-                result['Speedup_vs_Sklearn'] = sklearn_time / gpu_time
-            else:
-                result['Speedup_vs_Sklearn'] = 0
+            # VISUALIZE CLUSTERS - This is the new part!
+            if gpu_success and len(np.unique(gpu_labels)) > 1:
+                print("Creating cluster visualizations...")
+                
+                # Basic 2D plot
+                plot_clusters_2d(X, gpu_labels, 
+                                feature_names=['Feature 1', 'Feature 2'],
+                                title=f"GPU HDBSCAN: {data_type} dataset ({n_samples} samples)",
+                                save_path=os.path.join(output_dir, f"gpu_clusters_{data_type}_{n_samples}.png"))
+                
+                # Comprehensive analysis
+                analysis_results = comprehensive_cluster_analysis(
+                    X, gpu_labels, 
+                    feature_names=['Feature 1', 'Feature 2'],
+                    save_prefix=os.path.join(output_dir, f"gpu_analysis_{data_type}_{n_samples}")
+                )
+                
+                print(f"Cluster analysis saved with prefix: gpu_analysis_{data_type}_{n_samples}")
             
-            results.append(result)
+        except Exception as e:
+            print(f"GPU HDBSCAN failed: {e}")
+            gpu_labels, gpu_time, gpu_memory = np.array([]), float('inf'), 0
+            gpu_success = False
+        
+        # Test sklearn HDBSCAN
+        print("Running sklearn HDBSCAN...")
+        sklearn_hdbscan = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+        sklearn_labels, sklearn_time, sklearn_memory = track_performance(
+            sklearn_hdbscan.fit_predict, X
+        )
+        
+        # Visualize sklearn results too for comparison
+        if len(np.unique(sklearn_labels)) > 1:
+            plot_clusters_2d(X, sklearn_labels, 
+                            feature_names=['Feature 1', 'Feature 2'],
+                            title=f"Sklearn HDBSCAN: {data_type} dataset ({n_samples} samples)",
+                            save_path=os.path.join(output_dir, f"sklearn_clusters_{data_type}_{n_samples}.png"))
+        
+        # Store results (same as before)
+        result = {
+            'Dataset': data_type,
+            'Samples': n_samples,
+            'GPU_Time': gpu_time,
+            'Sklearn_Time': sklearn_time,
+            'GPU_Memory': gpu_memory,
+            'Sklearn_Memory': sklearn_memory,
+            'GPU_Success': gpu_success,
+            'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0) if gpu_success else 0,
+            'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
+        }
+        
+        if gpu_success and sklearn_time > 0:
+            result['Speedup_vs_Sklearn'] = sklearn_time / gpu_time
+        else:
+            result['Speedup_vs_Sklearn'] = 0
+        
+        results.append(result)
 
     # Create results DataFrame and save
     results_df = pd.DataFrame(results)
