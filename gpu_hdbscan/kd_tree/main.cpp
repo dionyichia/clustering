@@ -1,12 +1,13 @@
 #include <hip/hip_runtime.h>
 #include <cstring>   // for strcmp
 #include <iostream>
+#include <thrust/sort.h>
 #include <vector>
 #include <algorithm>
 #include <limits>
 #include <functional>
-#include <thrust/sort.h>
 #include <thrust/device_vector.h>
+#include <thrust/sort.h>
 #include <thrust/copy.h>
 #include "kd_tree/include/util.hpp"
 #include "kd_tree/include/distance.hpp"
@@ -36,11 +37,11 @@ void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int tota
     }
     
     // ALWAYS output cluster labels (needed for Python parsing)
-    // std::cout << "CLUSTER_LABELS:";
-    // for (int i = 0; i < labels.size(); ++i) {
-    //     std::cout << " " << labels[i];
-    // }
-    // std::cout << std::endl;
+    std::cout << "CLUSTER_LABELS:";
+    for (int i = 0; i < labels.size(); ++i) {
+        std::cout << " " << labels[i];
+    }
+    std::cout << std::endl;
     
     // Output cluster statistics (conditional)
     DEBUG_PRINT("CLUSTER_STATS:" << std::endl);
@@ -72,12 +73,16 @@ int main(int argc, char** argv) {
       --minclustersize (int): used in cluster extraction
   */
   int i = 1;
-  while (i + 1 < argc) { 
+  while (i < argc) { 
       if(!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")){
           printUsage(argv[0]);
           return 1;
       }
       else if(!strcmp(argv[i], "--dimensions")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
           try{
               dimensions = std::stoi(argv[i+1]);
               i += 2;
@@ -88,6 +93,10 @@ int main(int argc, char** argv) {
           }
       }
       else if (!strcmp(argv[i], "--minpts")) {
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
           try{
               k = std::stoi(argv[i+1]);
               i += 2;
@@ -110,6 +119,10 @@ int main(int argc, char** argv) {
       }
       else if (!strcmp(argv[i], "--skip-columns")) {
         // Parse comma-separated list of column indices to skip
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
         try {
             std::string cols_str = argv[i+1];
             std::stringstream ss(cols_str);
@@ -127,6 +140,10 @@ int main(int argc, char** argv) {
         }
     }
       else if (!strcmp(argv[i], "--input")) {
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
         try{
             input_filename = argv[i+1];  // Store filename for later use
             i += 2;
@@ -138,6 +155,10 @@ int main(int argc, char** argv) {
         }
       }
       else if (!strcmp(argv[i], "--distMetric")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
           try{
               metricChoice = std::stoi(argv[i+1]);
               switch (metricChoice){
@@ -153,6 +174,9 @@ int main(int argc, char** argv) {
                   case(4):
                       metric = DistanceMetric::Minkowski;
                       break;
+                  default:
+                      std::cerr << "Error: Invalid distance metric: " << metricChoice << "\n";
+                      return 1;
               }
               DEBUG_PRINT( "Distance Metric Selected: " << metricName(metric) << "\n");
               i += 2; 
@@ -163,6 +187,10 @@ int main(int argc, char** argv) {
           }
       }
       else if (!strcmp(argv[i], "--minkowskiP")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
           try{
               minkowskiP = std::stof(argv[i+1]);
               DEBUG_PRINT( "Minkowski P Value: " << minkowskiP << "\n");
@@ -174,6 +202,10 @@ int main(int argc, char** argv) {
           }
       }
       else if (!strcmp(argv[i], "--minclustersize")){
+          if (i + 1 >= argc) {
+              std::cerr << "Error: insufficient args provided\n";
+              return 1;
+          }
           try{
               min_cluster_size = std::stoi(argv[i+1]);
               DEBUG_PRINT( "Min Cluster Size: " << min_cluster_size << "\n");
