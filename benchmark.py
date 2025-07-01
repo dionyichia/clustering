@@ -15,11 +15,80 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.preprocessing import StandardScaler
+import glob
 
 class GPUHDBSCANWrapper:
     def __init__(self, executable_path="./gpu_hdbscan_edited/build/gpu_hdbscan", data_path="./data/noisy_pdwInterns.csv"):
         self.executable_path = executable_path
-        
+
+    def fit_predict_batched(
+        self,
+        input_csv_path: str,
+        dims: int,
+        min_samples: int = 5,
+        min_cluster_size: int = 5,
+        distance_metric: int = 2,
+        minkowski_p: float = 2.0,
+        quiet_mode: bool = True
+    ) -> np.ndarray:
+        """
+        Run GPU HDBSCAN directly on a pre-batched CSV file.
+
+        Args:
+            input_csv_path: Path to a CSV with header + data rows.
+            dims: Number of feature columns in the CSV.
+            min_samples: HDBSCAN min_samples.
+            min_cluster_size: HDBSCAN min_cluster_size.
+            distance_metric: (int) which distance metric flag to use.
+            minkowski_p: Minkowski p‐value, if distMetric==4.
+            quiet_mode: Suppress executable’s stdout/stderr to log file.
+
+        Returns:
+            ndarray of cluster labels (length = #rows in CSV minus header).
+        """
+        exe_path = os.path.abspath(self.executable_path)
+        log_path = os.path.join(os.getcwd(), "log_file.txt")
+
+        # Build the command
+        cmd = [
+            exe_path,
+            "--dimensions",      str(dims),
+            "--minpts",          str(min_samples),
+            "--input",           input_csv_path,
+            "--distMetric",      str(distance_metric),
+            "--minclustersize",  str(min_cluster_size),
+            "--skip-toa",
+            "--skip-amp",
+        ]
+        if quiet_mode:
+            cmd.append("--quiet")
+        if distance_metric == 4:
+            cmd += ["--minkowskiP", str(minkowski_p)]
+
+        # Execute
+        result = subprocess.run(cmd, text=True, timeout=300, capture_output=True)
+
+        # Log stdout/stderr
+        with open(log_path, "w") as log_file:
+            if result.stdout:
+                log_file.write(result.stdout)
+            if result.stderr:
+                log_file.write(result.stderr)
+
+        # On failure, return all-noise
+        if result.returncode != 0:
+            print(f"GPU HDBSCAN failed (code {result.returncode}):\n{result.stderr}")
+            # Count data rows: total lines minus header
+            with open(input_csv_path) as f:
+                n = sum(1 for _ in f) - 1
+            return np.full(n, -1, dtype=int)
+
+        # On success, parse labels
+        # Again count rows for parse fallback
+        with open(input_csv_path) as f:
+            n = sum(1 for _ in f) - 1
+        return self._parse_output(result.stdout, n)
+    
     def fit_predict(self, X, min_samples=5, min_cluster_size=5, distance_metric=2, minkowski_p=2.0, quiet_mode=True):
         """
         Wrapper to call GPU HDBSCAN executable
@@ -310,6 +379,99 @@ def _save_batch_and_create_config(batch_data: List[Dict], batch_dir: str, batch_
     }
     
     return config
+
+def run_benchmark_with_visualization_batched(
+    data_path=None,
+    executable_path=None,
+    use_amp=False,
+    use_toa=False
+):
+    """Enhanced benchmark function with cluster visualization"""
+    # Define output folder
+    output_dir = "benchmark_outputs"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Initialize algorithm wrapper
+    gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
+    
+    # Test parameters
+    min_samples     = 3
+    min_cluster_size= 50
+    quiet_mode      = True
+    
+    results = []
+    
+    if data_path is None:
+        raise ValueError("Must supply data_path to batch_data folder")
+    
+    # 1) Make sure batches exist
+    batch_dir = os.path.join(os.path.dirname(data_path), "batch_data")
+    if not os.path.isdir(batch_dir):
+        raise FileNotFoundError(f"batch_data folder not found at {batch_dir}")
+    
+    # 2) Grab every CSV in there
+    csv_paths = sorted(glob.glob(os.path.join(batch_dir, "*.csv")))
+    if not csv_paths:
+        raise FileNotFoundError("No .csv files found in batch_data/")
+    
+    # 3) Loop over each batch file
+    for csv_file in csv_paths:
+        # derive a name & sample count
+        batch_name = os.path.splitext(os.path.basename(csv_file))[0]
+        # count data rows (minus header)
+        with open(csv_file, 'r') as f:
+            n_samples = sum(1 for _ in f) - 1
+        
+        print(f"\n=== Processing batch {batch_name} ({n_samples} rows) ===")
+        
+        # read only the features you want
+        df = pd.read_csv(csv_file)
+        feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
+        if use_amp: feature_cols.append('Amp_S0(dBm)')
+        if use_toa: feature_cols.append('TOA(ns)')
+        
+        X = df[feature_cols].to_numpy()
+        
+        # GPU HDBSCAN on the file directly
+        print("  -> Running GPU HDBSCAN...")
+        dims = X.shape[1]
+        
+        # track timing & memory around that call if you like:
+        gpu_labels, gpu_time, gpu_mem = track_performance(
+            gpu_hdbscan.fit_predict_batched, csv_file,
+            dims,
+            min_samples=min_samples,
+            min_cluster_size=min_cluster_size,
+            quiet_mode=quiet_mode
+        )
+        
+        # sklearn HDBSCAN for comparison
+        print("  -> Running sklearn HDBSCAN...")
+        sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+        sklearn_labels, sklearn_time, sklearn_memory = track_performance(
+            sklearn_model.fit_predict, X
+        )
+        
+        # collect results
+        result = {
+            'Batch':        batch_name,
+            'Samples':      n_samples,
+            'GPU_Time': gpu_time,
+            'Sklearn_Time': sklearn_time,
+            'GPU_Memory': gpu_mem,
+            'Sklearn_Memory': sklearn_memory,
+            'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0),
+            'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
+        }
+        results.append(result)
+    
+    # save summary
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(os.path.join(output_dir, 'batch_benchmark_summary.csv'), index=False)
+    print("\n== All batches processed ==")
+    print(results_df)
+    
+    return results_df
 
 def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
     """Enhanced benchmark function with cluster visualization"""
@@ -906,8 +1068,11 @@ if __name__ == "__main__":
     if not os.path.exists(noisy_data_path):
         print(f"Noisy Data not found at {noisy_data_path}")
         noisy_data_path = add_gaussian_noise(data_path, std=std_array)
-
-    results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
+    
+    # Testing Batched Functions
+    batch_path = "./data/batch_data"
+    results = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False) 
+    # results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
 
     print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
     print("Plots saved to 'gpu_hdbscan_benchmark.png'")
