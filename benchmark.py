@@ -862,12 +862,12 @@ def comprehensive_cluster_analysis(X, labels, feature_names=None, save_prefix="c
                                                    save_path=f"{save_prefix}_pca.png")
         results['X_pca'] = X_pca
         
-        print("Creating t-SNE visualization...")
-        X_tsne = visualize_high_dimensional_clusters(X, labels, feature_names, 
-                                                    method='tsne',
-                                                    title="GPU HDBSCAN: t-SNE Projection",
-                                                    save_path=f"{save_prefix}_tsne.png")
-        results['X_tsne'] = X_tsne
+        # print("Creating t-SNE visualization...")
+        # X_tsne = visualize_high_dimensional_clusters(X, labels, feature_names, 
+        #                                             method='tsne',
+        #                                             title="GPU HDBSCAN: t-SNE Projection",
+        #                                             save_path=f"{save_prefix}_tsne.png")
+        results['X_tsne'] = None
     
     # 3. Evaluate clustering quality
     print("Evaluating clustering quality...")
