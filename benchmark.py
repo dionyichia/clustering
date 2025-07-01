@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import numpy as np
 import time
 import psutil
@@ -17,42 +18,73 @@ from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bo
 from sklearn.preprocessing import StandardScaler
 
 class GPUHDBSCANWrapper:
-    def __init__(self, executable_path="./gpu_hdbscan/build/gpu_hdbscan"):
+    def __init__(self, executable_path="./gpu_hdbscan_edited/build/gpu_hdbscan", data_path="./data/noisy_pdwInterns.csv"):
         self.executable_path = executable_path
         
-    def fit_predict(self, X, min_samples=5, min_cluster_size=5, distance_metric=2, minkowski_p=2.0):
+    def fit_predict(self, X, min_samples=5, min_cluster_size=5, distance_metric=2, minkowski_p=2.0, quiet_mode=True):
         """
         Wrapper to call GPU HDBSCAN executable
         """
-        # Create temporary file for input data
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        exe_path = os.path.abspath(self.executable_path)
+        exe_dir = os.path.dirname(exe_path)
+        wking_dir = os.getcwd()
+
+        log_path = os.path.join(wking_dir, "log_file.txt")
+
+        filename = "temp_input" + str(os.getpid()) + ".txt"
+        temp_input = os.path.join(wking_dir, filename)
+
+        with open(temp_input, 'w') as f:
             # Write data in the format your C++ code expects
+            # Add dummy header
+            f.write(','.join([f'feature_{i}' for i in range(X.shape[1])]) + '\n')
+
             for point in X:
-                f.write(' '.join(map(str, point)) + '\n')
+                f.write(','.join(map(str, point)) + '\n')
             temp_input = f.name
         
         try:
             # Prepare command arguments
-            cmd = [
-                self.executable_path,
-                "--dimensions", str(X.shape[1]),
-                "--minpts", str(min_samples),
-                "--input", temp_input,
-                "--distMetric", str(distance_metric),
-                "--minclustersize", str(min_cluster_size),
-                "--quiet"  # Suppress debug output
-            ]
+            if quiet_mode:
+                cmd = [
+                    exe_path,
+                    "--dimensions", str(X.shape[1]),
+                    "--minpts", str(min_samples),
+                    "--input", filename,
+                    "--distMetric", str(distance_metric),
+                    "--minclustersize", str(min_cluster_size),
+                    "--quiet",  # Suppress debug output
+                ]
+            else:
+                cmd = [
+                    exe_path,
+                    "--dimensions", str(X.shape[1]),
+                    "--minpts", str(min_samples),
+                    "--input", filename,
+                    "--distMetric", str(distance_metric),
+                    "--minclustersize", str(min_cluster_size)
+                ]
             
             if distance_metric == 4:  # Minkowski
                 cmd.extend(["--minkowskiP", str(minkowski_p)])
             
             # Run the executable and capture output
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
+            result = subprocess.run(cmd, text=True, timeout=300, capture_output=True)
+
+            # Write output to log file
+            with open(log_path, "w") as log_file:
+                if result.stdout:
+                    log_file.write(result.stdout)
+                if result.stderr:
+                    log_file.write(result.stderr)
+        
             if result.returncode != 0:
-                print(f"GPU HDBSCAN failed: {result.stderr}")
-                return np.full(len(X), -1)  # Return noise labels on failure
-            
+                print(f"GPU HDBSCAN failed with return code: {result.returncode}")
+                print(f"STDOUT: {result.stdout}")
+                print(f"STDERR: {result.stderr}")
+                print(f"Command: {' '.join(cmd)}")
+                return np.full(len(X), -1)
+                    
             # Parse output to extract cluster labels
             # You'll need to modify your C++ code to output labels in a parseable format
             labels = self._parse_output(result.stdout, len(X))
@@ -60,7 +92,11 @@ class GPUHDBSCANWrapper:
             
         finally:
             # Clean up temporary file
-            os.unlink(temp_input)
+            if os.path.exists(temp_input):
+                os.unlink(temp_input)
+                # os.unlink(log_path)
+
+            pass
     
     def _parse_output(self, output, n_points):
         """
@@ -96,9 +132,9 @@ def generate_test_data(data_type='blobs', n_samples=1000):
     X = StandardScaler().fit_transform(X)
     return X, y
 
-def add_gaussian_noise(data, snr_db=None, std=None):
+def add_gaussian_noise(data_path, std=['1M']):
     """
-    Add Gaussian noise to a dataset.
+    Add Gaussian noise to specific columns in a dataset.
 
     Parameters:
     - data: numpy array or pandas DataFrame
@@ -106,22 +142,34 @@ def add_gaussian_noise(data, snr_db=None, std=None):
     - std: standard deviation of the noise. Used only if snr_db is None.
 
     Returns:
-    - noisy_data: data with added Gaussian noise
+    - noisy_data file path: data with added Gaussian noise
     """
-    data_array = data.to_numpy() if isinstance(data, pd.DataFrame) else np.array(data)
-    signal_power = np.mean(data_array ** 2)
+    df = pd.read_csv(data_path)
 
-    if snr_db is not None:
-        snr_linear = 10 ** (snr_db / 10)
-        noise_power = signal_power / snr_linear
-        std = np.sqrt(noise_power)
+    columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
+    std_map = dict(zip(columns_to_noise, std_array))
 
-    noise = np.random.normal(loc=0.0, scale=std, size=data_array.shape)
-    noisy_data = data_array + noise
+    df_noisy = df.copy()
 
-    if isinstance(data, pd.DataFrame):
-        return pd.DataFrame(noisy_data, columns=data.columns)
-    return noisy_data
+    for col in columns_to_noise:
+        if col in df.columns:
+            noise = np.random.normal(loc=0.0, scale=std_map[col], size=df[col].shape)
+            df_noisy[col] = df[col] + noise
+        else:
+            raise ValueError (f"Column {col} not found in CSV.")
+
+    # Construct output file path
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
+
+    base = os.path.basename(data_path)
+    name, ext = os.path.splitext(base)
+    output_path = os.path.join(output_dir, f"noisy_{name}{ext}")
+
+    # Save data
+    df_noisy.to_csv(output_path, index=False)
+
+    return output_path
 
 def track_performance(func, *args, **kwargs):
     """Track execution time and memory usage"""
@@ -143,13 +191,13 @@ def track_performance(func, *args, **kwargs):
     
     return result, execution_time, memory_used
 
-def run_benchmark():
+def run_benchmark(executable_path=None):
     """Main benchmark function"""
     # Initialize algorithms
-    gpu_hdbscan = GPUHDBSCANWrapper()
+    gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
     # Test parameters
-    min_samples = 5
+    min_samples = 3
     min_cluster_size = 50
     
     # Results storage
@@ -231,18 +279,19 @@ def run_benchmark():
     
     return df
 
-def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=False, signal_noise_ratio=False):
+def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
     """Enhanced benchmark function with cluster visualization"""
     # Define output folder
     output_dir = "benchmark_outputs"
     os.makedirs(output_dir, exist_ok=True)
     
     # Initialize algorithms
-    gpu_hdbscan = GPUHDBSCANWrapper()
+    gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
     # Test parameters
-    min_samples = 5
+    min_samples = 3
     min_cluster_size = 50
+    quiet_mode = True
     
     # Results storage
     results = []
@@ -255,6 +304,7 @@ def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=Fals
         datasets = ['actual data']
         sample_sizes = [1189617] # Hardcoded num row TODO 
 
+
     for data_type in datasets:
         for n_samples in sample_sizes:
             print(f"\nTesting {data_type} dataset with {n_samples} samples...")
@@ -263,15 +313,13 @@ def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=Fals
             if data_path is None:
                 X, true_labels = generate_test_data(data_type, n_samples)
             else:
-                df = pd.read_csv(data_path) 
+                df = pd.read_csv(data_path)  
                 feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
 
                 if use_amp:
                     feature_cols.append('Amp_S0(dBm)')
                 if use_toa:
                     feature_cols.append('TOA(ns)')
-                if signal_noise_ratio:
-                    df = add_gaussian_noise(df, snr_db=signal_noise_ratio)
 
                 X = df[feature_cols].to_numpy()
                 true_labels = df['EmitterId'].to_numpy()
@@ -282,7 +330,7 @@ def run_benchmark_with_visualization(data_path=None, use_amp=False, use_toa=Fals
             print("Running GPU HDBSCAN...")
             try:
                 gpu_labels, gpu_time, gpu_memory = track_performance(
-                    gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size
+                    gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size, quiet_mode=quiet_mode
                 )
                 gpu_success = True
                 
@@ -792,17 +840,23 @@ if __name__ == "__main__":
         print(f"Executable not found at {executable_path}")
         print("Please run 'make' to build the project first")
         exit(1)
+
+    # Make sure data file path exists
+    data_path = "./data/pdwInterns.csv"
+    if not os.path.exists(data_path):
+        print(f"Date file not found at {data_path}")
+        exit(1)
     
     # Run benchmark
     # if data path provided will use data file else will generate 2d data.
-    data_path = "./gpu_hdbscan_edited/build/pdwInterns.csv"
-    signal_noise_ratio = 20
+    noisy_data_path = "./data/noisy_pdwInterns.csv"
+    std_array = [1.0, 0.00021, 0.2, 0.2]
 
-    if not os.path.exists(data_path):
-        print(f"Data not found at {data_path}")
-        results = run_benchmark_with_visualization(data_path=None)
-    else:
-        results = run_benchmark_with_visualization(data_path=data_path, use_amp=False, use_toa=False, signal_noise_ratio=signal_noise_ratio)
+    if not os.path.exists(noisy_data_path):
+        print(f"Noisy Data not found at {noisy_data_path}")
+        noisy_data_path = add_gaussian_noise(data_path, std=std_array)
+
+    results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
 
     print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
     print("Plots saved to 'gpu_hdbscan_benchmark.png'")
