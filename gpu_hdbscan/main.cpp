@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
       --minclustersize (int): used in cluster extraction
   */
   int i = 1;
-  while (i + 1 < argc) {
+  while (i + 1 < argc) { 
       if(!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")){
           printUsage(argv[0]);
           return 1;
