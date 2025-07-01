@@ -12,7 +12,7 @@
 #include <set>
 #include <cmath>
 #include <iomanip>
-
+#include <stack>
 // Recursively gather all original points under cluster `c`.
 void collect_members(int c,
                      int N_pts,
@@ -20,13 +20,26 @@ void collect_members(int c,
                      const std::vector<int>& right_child,
                      std::vector<int>& out)
 {
-    if (c < N_pts) {
-        // leaf
-        out.push_back(c);
-    } else {
-        collect_members(left_child[c], N_pts, left_child, right_child, out);
-        collect_members(right_child[c], N_pts, left_child, right_child, out);
-    }
+    std::stack<int> stack;
+    stack.push(c);
+    while(!stack.empty()){
+	int current = stack.top();
+	stack.pop();
+
+    if(current < N_pts){
+		// Leaf Node - add to output
+		out.push_back(current);
+	} else {
+        // Internal node - push children to stack
+        // Push right child first so left child is processed first (maintains order)
+		if (right_child[current] != -1) {
+			stack.push(right_child[current]);
+		} 
+		if (left_child[current] != -1) {
+			stack.push(left_child[current]);
+		}
+	}
+	}
 }
 
 std::vector<std::vector<int>> single_linkage_clustering(

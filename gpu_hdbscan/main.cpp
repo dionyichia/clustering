@@ -1,13 +1,12 @@
 #include <hip/hip_runtime.h>
 #include <cstring>   // for strcmp
 #include <iostream>
-#include <thrust/sort.h>
 #include <vector>
 #include <algorithm>
 #include <limits>
 #include <functional>
-#include <thrust/device_vector.h>
 #include <thrust/sort.h>
+#include <thrust/device_vector.h>
 #include <thrust/copy.h>
 #include "kd_tree/include/util.hpp"
 #include "kd_tree/include/distance.hpp"
