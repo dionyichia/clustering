@@ -203,7 +203,7 @@ def generate_test_data(data_type='blobs', n_samples=1000):
     X = StandardScaler().fit_transform(X)
     return X, y
 
-def add_gaussian_noise(data_path, std=['1M']):
+def add_gaussian_noise(data_path, std_array=[1.0, 0.00021, 0.2, 0.2] ):
     """
     Add Gaussian noise to specific columns in a dataset.
 
@@ -215,6 +215,7 @@ def add_gaussian_noise(data_path, std=['1M']):
     Returns:
     - noisy_data file path: data with added Gaussian noise
     """
+
     df = pd.read_csv(data_path)
 
     columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
@@ -974,10 +975,10 @@ def create_cluster_summary_table(X, labels, feature_names=None):
     
     summary_df = pd.DataFrame(summary_data)
     
-    print("\n" + "="*80)
-    print("CLUSTER SUMMARY STATISTICS")
-    print("="*80)
-    print(summary_df.to_string(index=False, float_format='%.3f'))
+    # print("\n" + "="*80)
+    # print("CLUSTER SUMMARY STATISTICS")
+    # print("="*80)
+    # print(summary_df.to_string(index=False, float_format='%.3f'))
     
     return summary_df
 
@@ -1063,7 +1064,7 @@ if __name__ == "__main__":
     # Run benchmark
     # if data path provided will use data file else will generate 2d data.
     noisy_data_path = "./data/noisy_pdwInterns.csv"
-    std_array = [1.0, 0.00021, 0.2, 0.2]
+    std_array = [1.0, 0.00021, 0.2, 0.2] 
 
     if not os.path.exists(noisy_data_path):
         print(f"Noisy Data not found at {noisy_data_path}")
@@ -1071,8 +1072,11 @@ if __name__ == "__main__":
     
     # Testing Batched Functions
     batch_path = "./data/batch_data"
-    results = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False) 
-    # results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
+    
+    if os.path.exists(batch_path):
+        results = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False) 
+    else:
+        results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
 
     print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
     print("Plots saved to 'gpu_hdbscan_benchmark.png'")
