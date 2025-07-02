@@ -208,7 +208,7 @@ void printUsage(char* prog) {
     std::cerr << "  --dimensions <int>      Number of feature dimensions to use\n";
     std::cerr << "  --minpts <int>          Minimum points for core distance\n";
     std::cerr << "  --input <filename>      Input CSV file\n";
-    std::cerr << "  --distMetric <int>      Distance metric (1:Manhattan, 2:Euclidean, 3:Chebyshev, 4:Minkowski)\n";
+    std::cerr << "  --distMetric <int>      Distance metric (1:Manhattan, 2:Euclidean, 3:Chebyshev, 4:Minkowski, 5:DSO)\n";
     std::cerr << "  --minkowskiP <float>    P-value for Minkowski distance\n";
     std::cerr << "  --minclustersize <int>  Minimum cluster size\n";
     std::cerr << "  --skip-toa              Skip TOA column (index 0)\n";

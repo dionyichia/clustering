@@ -73,7 +73,7 @@ void queryKNN(
     }
     else {
         double dist2;
-        dist2 = distance(node->point, query,metric,p);
+        dist2 = distance(query,node->point,metric,p);
         // if heap is not full, add point to heap containing k-nn to point
         if (heap.size() < static_cast<size_t>(k)) {
             heap.emplace(dist2, node->index);
@@ -91,7 +91,6 @@ void queryKNN(
     const KDNode* farChild  = diff < 0 ? node->right.get(): node->left.get();
 
     queryKNN(nearChild, query, query_idx, k, heap, points,metric,p);
-
     
     // only recurse into far child if heap is not filled
     // or distance from query to splitting axis is smaller than current furthest neighbour -> potentially close points on other side of axis
@@ -113,6 +112,15 @@ void queryKNN(
     // so compare diffAbs^p vs (heap.top())^p or pre-compare after raising both to p.
     double worstP = std::pow(heap.top().first, p);
     shouldVisitFar = (heap.size() < k || std::pow(diffAbs, p) < worstP);
+    }
+    else if (metric == DistanceMetric::DSO) {
+    if (query[axis] != 0.0) {
+      double rel = diff / query[axis];
+      shouldVisitFar = (heap.size()<k) || (rel*rel < heap.top().first);
+    } else {
+      // can’t prune on this axis if query[axis] is zero
+      shouldVisitFar = true;
+    }
     }
     if (shouldVisitFar) {
     queryKNN(farChild, query, query_idx, k, heap, points,metric,p);
@@ -153,7 +161,7 @@ void printAndVerifyCoreDists(
         dists.reserve(points.size()-1);
         for (int j = 0; j < (int)points.size(); ++j) {
             if (i == j) continue;
-            if (metric == DistanceMetric::EuclideanSquared){
+            if (metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
                 dists.push_back(std::sqrt(distance(points[i], points[j],metric,p)));
             }
             else{
@@ -193,7 +201,7 @@ void printAndVerifyMutualReachability(
             int j        = pr.first;
             double mr_st = pr.second;               // stored MR
             double d_ij;
-            if(metric == DistanceMetric::EuclideanSquared){
+            if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
                 d_ij = std::sqrt(distance(points[i], points[j],metric,p));
             }
             else{

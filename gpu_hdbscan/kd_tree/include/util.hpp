@@ -17,6 +17,6 @@ readPointsFromFile(const std::string& filename,
 std::vector<Point>
 readPointsFromFile(const std::string& filename,
                    int dimensions,
-                   const std::set<int>& skip_columns)
+                   const std::set<int>& skip_columns);
 /// Print usage and warnings
 void printUsage(char* prog);

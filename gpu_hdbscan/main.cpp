@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
   std::set<int> skip_columns;
   std::string input_filename;
   int noBenchMark = 0;
+  int noNorm = 0;
   int dimensions = NULL;
   int k = NULL;
   int min_cluster_size = NULL;
@@ -65,12 +66,18 @@ int main(int argc, char** argv) {
   float minkowskiP = NULL;
   DistanceMetric metric;
   /* Param Overrides 
-      --dimensions : number of dimensions (features) of each data point
-      --minpts (int): used in calculating core-distance and MRD. Doubles as --minclustersize for cluster extraction
-      --input (string): name of file storing input data
-      --distanceMetric (int): Choose Distance Metric [1: Manhattan, 2: Euclidean, 3: Chebyshev, 4:Minkowski]
-      --minkowskiP (float): P-value for minkowski
-      --minclustersize (int): used in cluster extraction
+    --dimensions <int>      Number of feature dimensions to use
+    --minpts <int>          Minimum points for core distance
+    --input <filename>      Input CSV file
+    --distMetric <int>      Distance metric (1:Manhattan, 2:Euclidean, 3:Chebyshev, 4:Minkowski, 5:DSO)
+    --minkowskiP <float>    P-value for Minkowski distance
+    --minclustersize <int>  Minimum cluster size
+    --skip-toa              Skip TOA column (index 0)
+    --skip-amp              Skip Amplitude column (index 3)
+    --skip-columns <list>   Skip specific columns (comma-separated indices)
+    --noBenchMark           Controls Which readPointsFromFile function is used
+    --quiet, -q             Suppress debug output
+    --help, -h              Show this help message
   */
   int i = 1;
   while (i < argc) { 
@@ -174,6 +181,9 @@ int main(int argc, char** argv) {
                   case(4):
                       metric = DistanceMetric::Minkowski;
                       break;
+                  case(5):
+                      metric = DistanceMetric::DSO;
+                      break;
                   default:
                       std::cerr << "Error: Invalid distance metric: " << metricChoice << "\n";
                       return 1;
@@ -225,6 +235,10 @@ int main(int argc, char** argv) {
         noBenchMark = 1;
         i += 1;
       }
+      else if (!strcmp(argv[i], "--noNorm")){
+        noNorm = 1;
+        i += 1;
+      }
         else {
           // unrecognized flag: skip just the flag
           std::cerr << "Warning: unknown option '" << argv[i] << "\n";
@@ -257,7 +271,12 @@ int main(int argc, char** argv) {
         else{
             points = readPointsFromFile(input_filename, dimensions, skip_columns);
         }
-        normalizePoints(points);
+        if (noNorm){
+            ;
+        }
+        else{
+            normalizePoints(points);
+        }
         DEBUG_PRINT("Read " << points.size() << " points with " << dimensions 
                     << " dimensions (skipped " << skip_columns.size() << " columns).\n");
         
@@ -295,7 +314,7 @@ int main(int argc, char** argv) {
       double d_k = 0;
       // 1) Record core‐distance before you empty the heap
       double coreDist = heap.top().first;
-      if(metric == DistanceMetric::EuclideanSquared){
+      if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
           core_dist[i] = std::sqrt(coreDist);
       }
       else{
@@ -305,7 +324,7 @@ int main(int argc, char** argv) {
       nbrs.reserve(k);
       while (!heap.empty()) {
       auto [d_sq, idx] = heap.top(); heap.pop();
-      if(metric == DistanceMetric::EuclideanSquared){
+      if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
           nbrs.emplace_back(idx, std::sqrt(d_sq));
       }
       else{

@@ -8,7 +8,8 @@ enum class DistanceMetric {
   EuclideanSquared,
   Manhattan,
   Chebyshev,
-  Minkowski
+  Minkowski,
+  DSO
 };
 
 

@@ -49,6 +49,14 @@ double distance(
         return std::pow(sum, 1.0 / p);
       }
 
+      case DistanceMetric::DSO: {
+        double sum = 0.0;
+        for (size_t i = 0; i < D; ++i) {
+          double d = ((a[i] - b[i])/a[i]);
+          sum += d*d;
+        }
+        return sum;
+      }
       default:
         throw std::invalid_argument("Unknown DistanceMetric");
     }
@@ -59,7 +67,8 @@ const char* metricName(DistanceMetric m) {
       case DistanceMetric::EuclideanSquared: return "EuclideanSquared";
       case DistanceMetric::Manhattan:        return "Manhattan";
       case DistanceMetric::Chebyshev:        return "Chebyshev";
-      case DistanceMetric::Minkowski:         return "Minkowski";
+      case DistanceMetric::Minkowski:        return "Minkowski";
+      case DistanceMetric::DSO:              return "DSO";
     }
     return "Unknown";
 }
