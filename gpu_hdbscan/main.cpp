@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <limits>
 #include <functional>
-#include <thrust/sort.h>
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
 #include <thrust/copy.h>
