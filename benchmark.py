@@ -3,8 +3,8 @@ import numpy as np
 import time
 import psutil
 import os
-from typing import List, Dict, Any
-from sklearn.cluster import HDBSCAN
+from typing import List, Dict, Any,Tuple
+from sklearn.cluster import HDBSCAN,DBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
@@ -193,6 +193,44 @@ class GPUHDBSCANWrapper:
         # If no labels found, return all noise
         print("Warning: Could not parse cluster labels from output")
         return np.full(n_points, -1)
+
+def load_dbscan_parameters(params_file: str) -> Dict[str, Tuple[int, float]]:
+    """
+    Load DBSCAN parameters from text file.
+    
+    Args:
+        params_file: Path to the parameters file
+        
+    Returns:
+        Dictionary mapping filename to (min_samples, epsilon) tuple
+    """
+    params = {}
+    
+    try:
+        with open(params_file, 'r') as f:
+            lines = f.readlines()
+            
+        # Skip header line
+        for line in lines[1:]:
+            line = line.strip()
+            if line:  # Skip empty lines
+                parts = line.split()
+                if len(parts) >= 3:
+                    filename = parts[0]
+                    min_samples = int(parts[1])
+                    epsilon = float(parts[2])
+                    params[filename] = (min_samples, epsilon)
+                    
+    except FileNotFoundError:
+        print(f"Parameters file not found: {params_file}")
+        return {}
+    except Exception as e:
+        print(f"Error reading parameters file: {e}")
+        return {}
+    
+    print(f"Loaded parameters for {len(params)} files")
+    return params
+
 
 def generate_test_data(data_type='blobs', n_samples=1000):
     """Generate synthetic datasets for testing"""
@@ -402,7 +440,11 @@ def run_benchmark_with_visualization_batched(
     # Define output folder
     output_dir = "benchmark_outputs"
     os.makedirs(output_dir, exist_ok=True)
-    
+    dbscan_params_file = "dbscan_params.txt"
+    dbscan_params = load_dbscan_parameters(dbscan_params_file)
+    if not dbscan_params:
+        print("No DBSCAN parameters loaded. Exiting.")
+        return
     # Initialize algorithm wrapper
     gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
@@ -429,8 +471,14 @@ def run_benchmark_with_visualization_batched(
     
     # 3) Loop over each batch file
     for csv_file in csv_paths:
+        batch_filename = os.path.basename(csv_file)
         # derive a name & sample count
         batch_name = os.path.splitext(os.path.basename(csv_file))[0]
+        if batch_filename not in dbscan_params:
+            print(f"No parameters found for {batch_filename}, skipping...")
+            continue
+        min_samples, epsilon = dbscan_params[batch_filename]
+
         # count data rows (minus header)
         with open(csv_file, 'r') as f:
             n_samples = sum(1 for _ in f) - 1
@@ -445,6 +493,10 @@ def run_benchmark_with_visualization_batched(
         if use_toa: feature_cols.append('TOA(ns)')
         
         X = df[feature_cols].to_numpy()
+        
+        # Scale the data for DBSCAN
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
 
         true_labels = df['EmitterId'].to_numpy()
         
@@ -468,24 +520,35 @@ def run_benchmark_with_visualization_batched(
             sklearn_model.fit_predict, X
         )
 
-        # Evaluate clustering results with ground truth
+        # DBSCAN for comparison - FIXED VERSION
+        print("  -> Running sklearn DBSCAN with optimal epsilon and minPoints...")
+        print(f"DBSCAN Parameters: min_samples={min_samples}, epsilon={epsilon}")
+        dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
+        dbscan_labels, dbscan_time, dbscan_memory = track_performance(
+            dbscan_model.fit_predict, X_scaled  # Use scaled data
+        )
+        
+        # Evaluate clustering results with ground truth - UPDATED TO INCLUDE DBSCAN
         print("  -> Evaluating clustering results...")
         eval_results = evaluate_clustering_with_ground_truth(
-            X, gpu_labels, sklearn_labels, true_labels,
+            X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
             batch_name, feature_cols, output_dir
         )
         evaluation_results.append(eval_results)
         
-        # collect performance results
+        # collect performance results - UPDATED TO INCLUDE DBSCAN
         result = {
             'Batch': batch_name,
             'Samples': n_samples,
             'GPU_Time': gpu_time,
             'Sklearn_Time': sklearn_time,
+            'DBSCAN_Time': dbscan_time,
             'GPU_Memory': gpu_mem,
             'Sklearn_Memory': sklearn_memory,
+            'DBSCAN_Memory': dbscan_memory,
             'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'],
             'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'],
+            'DBSCAN_Clusters': eval_results['dbscan_metrics']['N_Clusters'],
             'True_Clusters': eval_results['ground_truth_stats']['N_True_Clusters'],
             # Add accuracy metrics
             'GPU_ARI': eval_results['gpu_metrics']['ARI'],
@@ -494,6 +557,9 @@ def run_benchmark_with_visualization_batched(
             'Sklearn_ARI': eval_results['sklearn_metrics']['ARI'],
             'Sklearn_NMI': eval_results['sklearn_metrics']['NMI'],
             'Sklearn_V_Measure': eval_results['sklearn_metrics']['V_Measure'],
+            'DBSCAN_ARI': eval_results['dbscan_metrics']['ARI'],
+            'DBSCAN_NMI': eval_results['dbscan_metrics']['NMI'],
+            'DBSCAN_V_Measure': eval_results['dbscan_metrics']['V_Measure'],
             'Algorithm_Agreement_ARI': eval_results['algorithm_agreement']['ARI'],
         }
         results.append(result)
@@ -502,24 +568,27 @@ def run_benchmark_with_visualization_batched(
     results_df = pd.DataFrame(results)
     results_df.to_csv(os.path.join(output_dir, 'batch_benchmark_summary_with_accuracy.csv'), index=False)
     
-    # Create overall summary
+    # Create overall summary - UPDATED TO INCLUDE DBSCAN
     print("\n" + "="*80)
     print("BENCHMARK SUMMARY WITH ACCURACY METRICS")
     print("="*80)
-    print(results_df[['Batch', 'Samples', 'GPU_Time', 'Sklearn_Time', 
-                      'GPU_ARI', 'Sklearn_ARI', 'Algorithm_Agreement_ARI']].to_string(index=False))
+    print(results_df[['Batch', 'Samples', 'GPU_Time', 'Sklearn_Time', 'DBSCAN_Time',
+                      'GPU_ARI', 'Sklearn_ARI', 'DBSCAN_ARI', 'Algorithm_Agreement_ARI']].to_string(index=False))
     
-    # Calculate average performance
+    # Calculate average performance - UPDATED TO INCLUDE DBSCAN
     avg_gpu_ari = results_df['GPU_ARI'].mean()
     avg_sklearn_ari = results_df['Sklearn_ARI'].mean()
+    avg_dbscan_ari = results_df['DBSCAN_ARI'].mean()
     avg_agreement = results_df['Algorithm_Agreement_ARI'].mean()
     
     print(f"\nAVERAGE PERFORMANCE:")
     print(f"GPU HDBSCAN ARI: {avg_gpu_ari:.3f}")
     print(f"Sklearn HDBSCAN ARI: {avg_sklearn_ari:.3f}")
+    print(f"DBSCAN ARI: {avg_dbscan_ari:.3f}")
     print(f"Algorithm Agreement: {avg_agreement:.3f}")
     
     return results_df, evaluation_results
+
 
 
 def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
@@ -1099,6 +1168,7 @@ def evaluate_clustering_with_ground_truth(
     X: np.ndarray,
     gpu_labels: np.ndarray,
     sklearn_labels: np.ndarray,
+    dbscan_labels: np.ndarray,  # NEW PARAMETER
     true_labels: np.ndarray,
     batch_name: str,
     feature_names: list,
@@ -1114,7 +1184,9 @@ def evaluate_clustering_with_ground_truth(
     gpu_labels : array-like, shape (n_samples,)
         GPU HDBSCAN cluster labels
     sklearn_labels : array-like, shape (n_samples,)
-        Sklearn HDBSCAN cluster labels  
+        Sklearn HDBSCAN cluster labels
+    dbscan_labels : array-like, shape (n_samples,)
+        DBSCAN cluster labels
     true_labels : array-like, shape (n_samples,)
         Ground truth emitter IDs
     batch_name : str
@@ -1153,11 +1225,25 @@ def evaluate_clustering_with_ground_truth(
         'N_Noise': np.sum(sklearn_labels == -1)
     }
     
-    # Calculate agreement between the two algorithms
+    # NEW: DBSCAN metrics
+    dbscan_metrics = {
+        'ARI': adjusted_rand_score(true_labels, dbscan_labels),
+        'NMI': normalized_mutual_info_score(true_labels, dbscan_labels),
+        'Homogeneity': homogeneity_score(true_labels, dbscan_labels),
+        'Completeness': completeness_score(true_labels, dbscan_labels),
+        'V_Measure': v_measure_score(true_labels, dbscan_labels),
+        'N_Clusters': len(set(dbscan_labels)) - (1 if -1 in dbscan_labels else 0),
+        'N_Noise': np.sum(dbscan_labels == -1)
+    }
+    
+    # Calculate agreement between the algorithms - UPDATED
     algo_agreement = {
         'ARI': adjusted_rand_score(gpu_labels, sklearn_labels),
         'NMI': normalized_mutual_info_score(gpu_labels, sklearn_labels),
-        'V_Measure': v_measure_score(gpu_labels, sklearn_labels)
+        'V_Measure': v_measure_score(gpu_labels, sklearn_labels),
+        # Additional pairwise comparisons
+        'GPU_vs_DBSCAN_ARI': adjusted_rand_score(gpu_labels, dbscan_labels),
+        'Sklearn_vs_DBSCAN_ARI': adjusted_rand_score(sklearn_labels, dbscan_labels)
     }
     
     # Ground truth statistics
@@ -1166,27 +1252,29 @@ def evaluate_clustering_with_ground_truth(
         'N_Samples': len(true_labels)
     }
     
-    # Create comprehensive visualization
+    # Create comprehensive visualization - UPDATED TO INCLUDE DBSCAN
     create_comprehensive_clustering_plot(
-        X, gpu_labels, sklearn_labels, true_labels,
-        gpu_metrics, sklearn_metrics, algo_agreement, gt_stats,
+        X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
+        gpu_metrics, sklearn_metrics, dbscan_metrics, algo_agreement, gt_stats,
         batch_name, feature_names, save_dir
     )
     
     return {
         'gpu_metrics': gpu_metrics,
         'sklearn_metrics': sklearn_metrics,
+        'dbscan_metrics': dbscan_metrics,  # NEW
         'algorithm_agreement': algo_agreement,
         'ground_truth_stats': gt_stats,
         'batch_name': batch_name
     }
 
+
 def create_comprehensive_clustering_plot(
-    X, gpu_labels, sklearn_labels, true_labels,
-    gpu_metrics, sklearn_metrics, algo_agreement, gt_stats,
+    X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,  # NEW PARAMETER
+    gpu_metrics, sklearn_metrics, dbscan_metrics, algo_agreement, gt_stats,  # NEW PARAMETER
     batch_name, feature_names, save_dir
 ):
-    """Create a comprehensive 3-panel plot showing clustering results and metrics"""
+    """Create a comprehensive 4-panel plot showing clustering results and metrics"""
     
     # Use PCA for visualization if more than 2 features
     if X.shape[1] > 2:
@@ -1199,8 +1287,8 @@ def create_comprehensive_clustering_plot(
         x_label = feature_names[0] if len(feature_names) > 0 else "Feature 1"
         y_label = feature_names[1] if len(feature_names) > 1 else "Feature 2"
     
-    # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    # Create figure with subplots - UPDATED TO 2x3 LAYOUT
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
     fig.suptitle(f'Clustering Analysis: {batch_name}', fontsize=16, fontweight='bold')
     
     # Color maps
@@ -1225,7 +1313,7 @@ def create_comprehensive_clustering_plot(
     ax2.grid(True, alpha=0.3)
     
     # Plot 3: Sklearn HDBSCAN
-    ax3 = axes[1, 0]
+    ax3 = axes[0, 2]
     scatter3 = ax3.scatter(X_plot[:, 0], X_plot[:, 1], c=sklearn_labels, 
                           cmap=cmap_discrete, s=30, alpha=0.7)
     ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold')
@@ -1233,11 +1321,20 @@ def create_comprehensive_clustering_plot(
     ax3.set_ylabel(y_label)
     ax3.grid(True, alpha=0.3)
     
-    # Plot 4: Metrics Summary
-    ax4 = axes[1, 1]
-    ax4.axis('off')
+    # Plot 4: DBSCAN - NEW PLOT
+    ax4 = axes[1, 0]
+    scatter4 = ax4.scatter(X_plot[:, 0], X_plot[:, 1], c=dbscan_labels, 
+                          cmap=cmap_discrete, s=30, alpha=0.7)
+    ax4.set_title('DBSCAN Results', fontweight='bold')
+    ax4.set_xlabel(x_label)
+    ax4.set_ylabel(y_label)
+    ax4.grid(True, alpha=0.3)
     
-    # Create metrics table
+    # Plot 5: Metrics Summary - UPDATED
+    ax5 = axes[1, 1]
+    ax5.axis('off')
+    
+    # Create metrics table - UPDATED TO INCLUDE DBSCAN
     metrics_text = f"""
     Dataset Statistics:
     • Samples: {gt_stats['N_Samples']:,}
@@ -1257,19 +1354,46 @@ def create_comprehensive_clustering_plot(
     • Clusters Found: {sklearn_metrics['N_Clusters']}
     • Noise Points: {sklearn_metrics['N_Noise']}
     
+    DBSCAN vs Ground Truth:
+    • ARI: {dbscan_metrics['ARI']:.3f}
+    • NMI: {dbscan_metrics['NMI']:.3f}
+    • V-Measure: {dbscan_metrics['V_Measure']:.3f}
+    • Clusters Found: {dbscan_metrics['N_Clusters']}
+    • Noise Points: {dbscan_metrics['N_Noise']}
+    """
+    
+    ax5.text(0.05, 0.95, metrics_text, transform=ax5.transAxes, 
+             fontsize=9, verticalalignment='top', fontfamily='monospace',
+             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray", alpha=0.8))
+    
+    # Plot 6: Algorithm Agreement - NEW PLOT
+    ax6 = axes[1, 2]
+    ax6.axis('off')
+    
+    agreement_text = f"""
     Algorithm Agreement:
+    
+    GPU vs Sklearn HDBSCAN:
     • ARI: {algo_agreement['ARI']:.3f}
     • NMI: {algo_agreement['NMI']:.3f}
     • V-Measure: {algo_agreement['V_Measure']:.3f}
     
+    GPU HDBSCAN vs DBSCAN:
+    • ARI: {algo_agreement['GPU_vs_DBSCAN_ARI']:.3f}
+    
+    Sklearn HDBSCAN vs DBSCAN:
+    • ARI: {algo_agreement['Sklearn_vs_DBSCAN_ARI']:.3f}
+    
     Metric Interpretation:
     • ARI/NMI/V-Measure: 0.0-1.0 (higher = better)
-    • > 0.5: Good, > 0.7: Strong, > 0.9: Excellent
+    • > 0.5: Good
+    • > 0.7: Strong
+    • > 0.9: Excellent
     """
     
-    ax4.text(0.05, 0.95, metrics_text, transform=ax4.transAxes, 
-             fontsize=10, verticalalignment='top', fontfamily='monospace',
-             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray", alpha=0.8))
+    ax6.text(0.05, 0.95, agreement_text, transform=ax6.transAxes, 
+             fontsize=9, verticalalignment='top', fontfamily='monospace',
+             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.8))
     
     plt.tight_layout()
     
