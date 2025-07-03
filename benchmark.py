@@ -3,7 +3,7 @@ import numpy as np
 import time
 import psutil
 import os
-from typing import List, Dict
+from typing import List, Dict, Any
 from sklearn.cluster import HDBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
@@ -13,7 +13,18 @@ matplotlib.use('Agg')  # Use non-GUI backend suitable for headless environments
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from sklearn.metrics import (
+    adjusted_rand_score, 
+    normalized_mutual_info_score,
+    homogeneity_score,
+    completeness_score,
+    v_measure_score,
+    fowlkes_mallows_score,
+    confusion_matrix,
+    silhouette_score, 
+    calinski_harabasz_score, 
+    davies_bouldin_score
+)
 from sklearn.preprocessing import StandardScaler
 import glob
 
@@ -401,6 +412,7 @@ def run_benchmark_with_visualization_batched(
     quiet_mode      = True
     
     results = []
+    evaluation_results = []
     
     if data_path is None:
         raise ValueError("Must supply data_path to batch_data folder")
@@ -428,10 +440,13 @@ def run_benchmark_with_visualization_batched(
         # read only the features you want
         df = pd.read_csv(csv_file)
         feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
+
         if use_amp: feature_cols.append('Amp_S0(dBm)')
         if use_toa: feature_cols.append('TOA(ns)')
         
         X = df[feature_cols].to_numpy()
+
+        true_labels = df['EmitterId'].to_numpy()
         
         # GPU HDBSCAN on the file directly
         print("  -> Running GPU HDBSCAN...")
@@ -452,27 +467,60 @@ def run_benchmark_with_visualization_batched(
         sklearn_labels, sklearn_time, sklearn_memory = track_performance(
             sklearn_model.fit_predict, X
         )
+
+        # Evaluate clustering results with ground truth
+        print("  -> Evaluating clustering results...")
+        eval_results = evaluate_clustering_with_ground_truth(
+            X, gpu_labels, sklearn_labels, true_labels,
+            batch_name, feature_cols, output_dir
+        )
+        evaluation_results.append(eval_results)
         
-        # collect results
+        # collect performance results
         result = {
-            'Batch':        batch_name,
-            'Samples':      n_samples,
+            'Batch': batch_name,
+            'Samples': n_samples,
             'GPU_Time': gpu_time,
             'Sklearn_Time': sklearn_time,
             'GPU_Memory': gpu_mem,
             'Sklearn_Memory': sklearn_memory,
-            'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0),
-            'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
+            'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'],
+            'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'],
+            'True_Clusters': eval_results['ground_truth_stats']['N_True_Clusters'],
+            # Add accuracy metrics
+            'GPU_ARI': eval_results['gpu_metrics']['ARI'],
+            'GPU_NMI': eval_results['gpu_metrics']['NMI'],
+            'GPU_V_Measure': eval_results['gpu_metrics']['V_Measure'],
+            'Sklearn_ARI': eval_results['sklearn_metrics']['ARI'],
+            'Sklearn_NMI': eval_results['sklearn_metrics']['NMI'],
+            'Sklearn_V_Measure': eval_results['sklearn_metrics']['V_Measure'],
+            'Algorithm_Agreement_ARI': eval_results['algorithm_agreement']['ARI'],
         }
         results.append(result)
     
-    # save summary
+    # save detailed summary
     results_df = pd.DataFrame(results)
-    results_df.to_csv(os.path.join(output_dir, 'batch_benchmark_summary.csv'), index=False)
-    print("\n== All batches processed ==")
-    print(results_df)
+    results_df.to_csv(os.path.join(output_dir, 'batch_benchmark_summary_with_accuracy.csv'), index=False)
     
-    return results_df
+    # Create overall summary
+    print("\n" + "="*80)
+    print("BENCHMARK SUMMARY WITH ACCURACY METRICS")
+    print("="*80)
+    print(results_df[['Batch', 'Samples', 'GPU_Time', 'Sklearn_Time', 
+                      'GPU_ARI', 'Sklearn_ARI', 'Algorithm_Agreement_ARI']].to_string(index=False))
+    
+    # Calculate average performance
+    avg_gpu_ari = results_df['GPU_ARI'].mean()
+    avg_sklearn_ari = results_df['Sklearn_ARI'].mean()
+    avg_agreement = results_df['Algorithm_Agreement_ARI'].mean()
+    
+    print(f"\nAVERAGE PERFORMANCE:")
+    print(f"GPU HDBSCAN ARI: {avg_gpu_ari:.3f}")
+    print(f"Sklearn HDBSCAN ARI: {avg_sklearn_ari:.3f}")
+    print(f"Algorithm Agreement: {avg_agreement:.3f}")
+    
+    return results_df, evaluation_results
+
 
 def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
     """Enhanced benchmark function with cluster visualization"""
@@ -1047,6 +1095,192 @@ def comprehensive_cluster_analysis(X, labels, feature_names=None, save_prefix="c
     
     return results
 
+def evaluate_clustering_with_ground_truth(
+    X: np.ndarray,
+    gpu_labels: np.ndarray,
+    sklearn_labels: np.ndarray,
+    true_labels: np.ndarray,
+    batch_name: str,
+    feature_names: list,
+    save_dir: str = "benchmark_outputs"
+) -> Dict[str, Any]:
+    """
+    Evaluate clustering results against ground truth and create comprehensive visualization.
+    
+    Parameters:
+    -----------
+    X : array-like, shape (n_samples, n_features)
+        Feature data
+    gpu_labels : array-like, shape (n_samples,)
+        GPU HDBSCAN cluster labels
+    sklearn_labels : array-like, shape (n_samples,)
+        Sklearn HDBSCAN cluster labels  
+    true_labels : array-like, shape (n_samples,)
+        Ground truth emitter IDs
+    batch_name : str
+        Name of the batch for labeling
+    feature_names : list
+        Names of the features
+    save_dir : str
+        Directory to save plots
+    
+    Returns:
+    --------
+    dict : Dictionary containing all evaluation metrics
+    """
+    
+    # Create output directory
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Calculate key metrics for both algorithms against ground truth
+    gpu_metrics = {
+        'ARI': adjusted_rand_score(true_labels, gpu_labels),
+        'NMI': normalized_mutual_info_score(true_labels, gpu_labels),
+        'Homogeneity': homogeneity_score(true_labels, gpu_labels),
+        'Completeness': completeness_score(true_labels, gpu_labels),
+        'V_Measure': v_measure_score(true_labels, gpu_labels),
+        'N_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0),
+        'N_Noise': np.sum(gpu_labels == -1)
+    }
+    
+    sklearn_metrics = {
+        'ARI': adjusted_rand_score(true_labels, sklearn_labels),
+        'NMI': normalized_mutual_info_score(true_labels, sklearn_labels),
+        'Homogeneity': homogeneity_score(true_labels, sklearn_labels),
+        'Completeness': completeness_score(true_labels, sklearn_labels),
+        'V_Measure': v_measure_score(true_labels, sklearn_labels),
+        'N_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
+        'N_Noise': np.sum(sklearn_labels == -1)
+    }
+    
+    # Calculate agreement between the two algorithms
+    algo_agreement = {
+        'ARI': adjusted_rand_score(gpu_labels, sklearn_labels),
+        'NMI': normalized_mutual_info_score(gpu_labels, sklearn_labels),
+        'V_Measure': v_measure_score(gpu_labels, sklearn_labels)
+    }
+    
+    # Ground truth statistics
+    gt_stats = {
+        'N_True_Clusters': len(set(true_labels)),
+        'N_Samples': len(true_labels)
+    }
+    
+    # Create comprehensive visualization
+    create_comprehensive_clustering_plot(
+        X, gpu_labels, sklearn_labels, true_labels,
+        gpu_metrics, sklearn_metrics, algo_agreement, gt_stats,
+        batch_name, feature_names, save_dir
+    )
+    
+    return {
+        'gpu_metrics': gpu_metrics,
+        'sklearn_metrics': sklearn_metrics,
+        'algorithm_agreement': algo_agreement,
+        'ground_truth_stats': gt_stats,
+        'batch_name': batch_name
+    }
+
+def create_comprehensive_clustering_plot(
+    X, gpu_labels, sklearn_labels, true_labels,
+    gpu_metrics, sklearn_metrics, algo_agreement, gt_stats,
+    batch_name, feature_names, save_dir
+):
+    """Create a comprehensive 3-panel plot showing clustering results and metrics"""
+    
+    # Use PCA for visualization if more than 2 features
+    if X.shape[1] > 2:
+        pca = PCA(n_components=2)
+        X_plot = pca.fit_transform(X)
+        x_label = f"PC1 ({pca.explained_variance_ratio_[0]:.2%} variance)"
+        y_label = f"PC2 ({pca.explained_variance_ratio_[1]:.2%} variance)"
+    else:
+        X_plot = X
+        x_label = feature_names[0] if len(feature_names) > 0 else "Feature 1"
+        y_label = feature_names[1] if len(feature_names) > 1 else "Feature 2"
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle(f'Clustering Analysis: {batch_name}', fontsize=16, fontweight='bold')
+    
+    # Color maps
+    cmap_discrete = plt.cm.tab20
+    
+    # Plot 1: Ground Truth
+    ax1 = axes[0, 0]
+    scatter1 = ax1.scatter(X_plot[:, 0], X_plot[:, 1], c=true_labels, 
+                          cmap=cmap_discrete, s=30, alpha=0.7)
+    ax1.set_title('Ground Truth (EmitterId)', fontweight='bold')
+    ax1.set_xlabel(x_label)
+    ax1.set_ylabel(y_label)
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: GPU HDBSCAN
+    ax2 = axes[0, 1]
+    scatter2 = ax2.scatter(X_plot[:, 0], X_plot[:, 1], c=gpu_labels, 
+                          cmap=cmap_discrete, s=30, alpha=0.7)
+    ax2.set_title('GPU HDBSCAN Results', fontweight='bold')
+    ax2.set_xlabel(x_label)
+    ax2.set_ylabel(y_label)
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Sklearn HDBSCAN
+    ax3 = axes[1, 0]
+    scatter3 = ax3.scatter(X_plot[:, 0], X_plot[:, 1], c=sklearn_labels, 
+                          cmap=cmap_discrete, s=30, alpha=0.7)
+    ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold')
+    ax3.set_xlabel(x_label)
+    ax3.set_ylabel(y_label)
+    ax3.grid(True, alpha=0.3)
+    
+    # Plot 4: Metrics Summary
+    ax4 = axes[1, 1]
+    ax4.axis('off')
+    
+    # Create metrics table
+    metrics_text = f"""
+    Dataset Statistics:
+    • Samples: {gt_stats['N_Samples']:,}
+    • True Clusters: {gt_stats['N_True_Clusters']}
+    
+    GPU HDBSCAN vs Ground Truth:
+    • ARI: {gpu_metrics['ARI']:.3f}
+    • NMI: {gpu_metrics['NMI']:.3f}
+    • V-Measure: {gpu_metrics['V_Measure']:.3f}
+    • Clusters Found: {gpu_metrics['N_Clusters']}
+    • Noise Points: {gpu_metrics['N_Noise']}
+    
+    Sklearn HDBSCAN vs Ground Truth:
+    • ARI: {sklearn_metrics['ARI']:.3f}
+    • NMI: {sklearn_metrics['NMI']:.3f}
+    • V-Measure: {sklearn_metrics['V_Measure']:.3f}
+    • Clusters Found: {sklearn_metrics['N_Clusters']}
+    • Noise Points: {sklearn_metrics['N_Noise']}
+    
+    Algorithm Agreement:
+    • ARI: {algo_agreement['ARI']:.3f}
+    • NMI: {algo_agreement['NMI']:.3f}
+    • V-Measure: {algo_agreement['V_Measure']:.3f}
+    
+    Metric Interpretation:
+    • ARI/NMI/V-Measure: 0.0-1.0 (higher = better)
+    • > 0.5: Good, > 0.7: Strong, > 0.9: Excellent
+    """
+    
+    ax4.text(0.05, 0.95, metrics_text, transform=ax4.transAxes, 
+             fontsize=10, verticalalignment='top', fontfamily='monospace',
+             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray", alpha=0.8))
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    save_path = os.path.join(save_dir, f'{batch_name}_clustering_analysis.png')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    print(f"Comprehensive plot saved to: {save_path}")
+
+
 if __name__ == "__main__":
     # Make sure your executable is built
     executable_path = "./gpu_hdbscan_edited/build/gpu_hdbscan"
@@ -1074,7 +1308,7 @@ if __name__ == "__main__":
     batch_path = "./data/batch_data"
     
     if os.path.exists(batch_path):
-        results = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False) 
+        results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False) 
     else:
         results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
 
