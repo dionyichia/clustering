@@ -1,0 +1,10 @@
+Name of File Min_Samples Epsilon
+Data_Batch_1.csv 5 0.330288
+Data_Batch_2.csv 5 0.412726
+Data_Batch_3.csv 5 0.380242
+Data_Batch_4.csv 5 0.374820
+Data_Batch_5.csv 5 0.393161
+Data_Batch_6.csv 5 0.403182
+Data_Batch_7.csv 5 0.421698
+Data_Batch_8.csv 5 0.391331
+Data_Batch_9.csv 5 0.387541
