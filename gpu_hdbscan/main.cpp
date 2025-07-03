@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
   int noBenchMark = 0;
   int noNorm = 0;
   int dimensions = NULL;
-  int k = NULL;
+  int minPts = NULL;
   int min_cluster_size = NULL;
   int metricChoice = NULL;
   float minkowskiP = NULL;
@@ -104,9 +104,9 @@ int main(int argc, char** argv) {
             return 1;
         }
           try{
-              k = std::stoi(argv[i+1]);
+              minPts = std::stoi(argv[i+1]);
               i += 2;
-              DEBUG_PRINT("Minimum Points " << k << "\n"); 
+              DEBUG_PRINT("Minimum Points " << minPts << "\n"); 
           } catch(const std::exception& e) {
               std::cerr << e.what() << "\n";
               printUsage(argv[0]);
@@ -245,9 +245,6 @@ int main(int argc, char** argv) {
           i += 1;
       }
   }
-    if (k == NULL){
-        k = 2;
-    }
     if (dimensions == NULL){
         std::cerr << "Dimensions Of Data Not Provided" << "\n";
         printUsage(argv[0]);
@@ -278,7 +275,10 @@ int main(int argc, char** argv) {
         }
         DEBUG_PRINT("Read " << points.size() << " points with " << dimensions 
                     << " dimensions (skipped " << skip_columns.size() << " columns).\n");
-        
+        if (minPts == NULL){
+            minPts = log(points.size());
+            DEBUG_PRINT("No value for minPts provided, using log(numPoints)..." << "\n" << "MinPts: " << points.size() << "\n");
+        }
         // Print which columns were skipped
         if (!skip_columns.empty() && !quiet_mode) {
             DEBUG_PRINT("Skipped columns: ");
@@ -302,16 +302,13 @@ int main(int argc, char** argv) {
   auto root = buildKDTree(points);
 
   for (int i = 0; i < N; ++i) {
-      // 1) Prepare an empty max-heap
+      //    Prepare an empty max-heap
       std::priority_queue<std::pair<double,int>> heap;
 
-      // 2) Query the tree for point i
-      queryKNN(root.get(), points[i], i, k, heap, points,metric,minkowskiP);
-      // 3) Extract neighbors (and record the core distance)
-      //    Since heap is max‐heap, after you pop k elements,
-      //    the last popped distance = core distance
-      double d_k = 0;
-      // 1) Record core‐distance before you empty the heap
+      //    Query the tree for point i
+      queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP);
+      //    Record core‐distance before you empty the heap
+      //    Since heap is max‐heap, the first popped distance = core distance
       double coreDist = heap.top().first;
       if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
           core_dist[i] = std::sqrt(coreDist);
@@ -319,8 +316,9 @@ int main(int argc, char** argv) {
       else{
           core_dist[i] = coreDist;
       }
+      //    Extract neighbors
       std::vector<std::pair<int,double>> nbrs;
-      nbrs.reserve(k);
+      nbrs.reserve(minPts);
       while (!heap.empty()) {
       auto [d_sq, idx] = heap.top(); heap.pop();
       if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
@@ -330,13 +328,13 @@ int main(int argc, char** argv) {
           nbrs.emplace_back(idx, d_sq);
       }
       }
-      // reverse to have them in ascending order if you like
+      // reverse to have neighbours in ascending order
       std::reverse(nbrs.begin(), nbrs.end());
       knn_graph[i] = std::move(nbrs);
   }
 
   if (!quiet_mode) {
-        printAndVerifyCoreDists(points, core_dist, k, metric, minkowskiP);
+        printAndVerifyCoreDists(points, core_dist, minPts, metric, minkowskiP);
     }
 
 
@@ -346,8 +344,10 @@ int main(int argc, char** argv) {
         printAndVerifyMutualReachability(points, core_dist, knn_graph, metric, minkowskiP);
     }
   // After you've built your knn_graph and converted to mutual reachability
+  // Retrieve Edges for Boruvka
   std::vector<Edge> all_edges = flatten(knn_graph);
-  // Now you can sort by weight if needed
+
+  // Sort By Weight
   constexpr size_t GPU_SORT_THRESHOLD = 1'000'000;
   std::cout << "[DEBUG] Before sort, first few weights:";
   for (size_t i = 0; i < std::min<size_t>(5, all_edges.size()); ++i)
@@ -374,13 +374,6 @@ int main(int argc, char** argv) {
   if (!quiet_mode) {
         printFirstNEdges(all_edges);
     }
-
-  /* 
-     all_edges = flattened array of k*N edges
-     pointIndexes = array of indices of points
-     numEdges = size of edges
-  */ 
-
   int numEdges = all_edges.size();
   ullong n_vertices = static_cast<ullong>(N);
   ullong n_edges = static_cast<ullong>(numEdges);
@@ -415,19 +408,15 @@ int main(int argc, char** argv) {
     DEBUG_PRINT( "Total MST edges: " << mst_edge_count << "\n");
     DEBUG_PRINT( "Expected MST edges: " << n_vertices - 1 << "\n");
 
-    // Post process MST into list of edges
-
     
-    // TODO: Optimise
     int N_pts = points.size();
     DEBUG_PRINT( "[DEBUG] Number of points (N_pts): " << N_pts << "\n");
 
+    DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
 
-   DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
-
-   // Set min_cluster_size if not already set
+    // Set min_cluster_size if not already set
     if (min_cluster_size == NULL) {
-        min_cluster_size = 2;  // or use k as default
+        min_cluster_size = max(20,minPts);  // or use minPts as default
     }
 
     // Call the single linkage clustering function
