@@ -25,7 +25,6 @@ from sklearn.metrics import (
     calinski_harabasz_score, 
     davies_bouldin_score
 )
-from sklearn.preprocessing import StandardScaler
 import glob
 
 class GPUHDBSCANWrapper:
@@ -39,6 +38,7 @@ class GPUHDBSCANWrapper:
         min_samples: int = 5,
         min_cluster_size: int = 5,
         distance_metric: int = 2,
+        cluster_method: int = 1, # 1 is EOM, 2 is Leaf
         minkowski_p: float = 2.0,
         quiet_mode: bool = True
     ) -> np.ndarray:
@@ -68,6 +68,7 @@ class GPUHDBSCANWrapper:
             "--input",           input_csv_path,
             "--distMetric",      str(distance_metric),
             "--minclustersize",  str(min_cluster_size),
+            "--clusterMethod",   str(cluster_method),
             "--skip-toa",
             "--skip-amp",
         ]
@@ -463,7 +464,7 @@ def run_benchmark_with_visualization_batched(
     
     # Test parameters
     min_samples     = 3
-    min_cluster_size= 50
+    min_cluster_size= 20
     quiet_mode      = True
     
     results = []
@@ -482,6 +483,7 @@ def run_benchmark_with_visualization_batched(
     if not csv_paths:
         raise FileNotFoundError("No .csv files found in batch_data/")
     
+    # Find Optimal Parameters for DBSCAN and HDBSCAN
     # 3) Loop over each batch file
     for csv_file in csv_paths:
         batch_filename = os.path.basename(csv_file)
@@ -505,7 +507,7 @@ def run_benchmark_with_visualization_batched(
 
         # Try finding min points per emitter from all unique emitters in batch
         try: 
-            min_cluster_size = find_min_points_per_emitter(df, emitter_col)
+            min_cluster_size = max(20,find_min_points_per_emitter(df, emitter_col))
         except Exception as e:
             print(f"Error processing file: {e}")
 
@@ -517,6 +519,8 @@ def run_benchmark_with_visualization_batched(
         X = df[feature_cols].to_numpy()
         
         # Scale the data for DBSCAN
+        # technically our HDBSCAN uses MinMaxScaling
+        # if i change to MinMaxScaler, will need to recompute optimal epsilon and min_samples
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 

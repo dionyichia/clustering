@@ -5,6 +5,11 @@
 #include <iostream>
 #include "kd_tree/include/types.hpp"  // Include for Edge definition
 
+enum class clusterMethod{
+    EOM,
+    Leaf
+};
+
 // Struct for Cluster Output Comparison 
 struct ClusterMetrics {
     double adjusted_rand_index;
@@ -35,8 +40,11 @@ struct ClusterChoice {
 std::vector<std::vector<int>> single_linkage_clustering(
     const std::vector<Edge>& mst_edges,
     int N_pts,
-    int min_cluster_size = 2
+    int min_cluster_size = 2,
+    clusterMethod clusterMethod = clusterMethod::EOM
 );
+
+const char* clusterMethodName(clusterMethod m);
 
 // Helper function to collect members (can be made internal if not needed elsewhere)
 void collect_members(int c,

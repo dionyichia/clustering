@@ -1,8 +1,8 @@
 #include "kd_tree/include/kdtree.hpp"
 #include <algorithm>
 #include <utility>
-#include <cmath>        // for std::pow, std::abs
-#include <iostream>    // for prints
+#include <cmath>        
+#include <iostream>    
 #include <queue>
 #include <vector>
 

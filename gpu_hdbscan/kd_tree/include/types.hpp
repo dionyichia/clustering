@@ -25,4 +25,5 @@ using Point = std::vector<double>;
 using PI    = std::pair<Point,int>;
 
 // forward‐declare DistanceMetric so other headers can see it
+enum class clusterMethod;
 enum class DistanceMetric;

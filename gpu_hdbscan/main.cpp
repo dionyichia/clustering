@@ -15,7 +15,7 @@
 #include "boruvka/boruvka.hpp" 
 #include "single_linkage/single_linkage.hpp"
 #include <iomanip>
-
+#include <fstream>
 // QUIET MODE to silence debug statements
 bool quiet_mode = false;
 
@@ -62,6 +62,8 @@ int main(int argc, char** argv) {
   int minPts = NULL;
   int min_cluster_size = NULL;
   int metricChoice = NULL;
+  clusterMethod clusterMethod;
+  int clusterMethodChoice = NULL;
   float minkowskiP = NULL;
   DistanceMetric metric;
   /* Param Overrides 
@@ -71,6 +73,7 @@ int main(int argc, char** argv) {
     --distMetric <int>      Distance metric (1:Manhattan, 2:Euclidean, 3:Chebyshev, 4:Minkowski, 5:DSO)
     --minkowskiP <float>    P-value for Minkowski distance
     --minclustersize <int>  Minimum cluster size
+    --clusterMethod         Cluster Method (1:EOM, 2:Leaf)
     --skip-toa              Skip TOA column (index 0)
     --skip-amp              Skip Amplitude column (index 3)
     --skip-columns <list>   Skip specific columns (comma-separated indices)
@@ -195,6 +198,32 @@ int main(int argc, char** argv) {
               return 1;
           }
       }
+      else if (!strcmp(argv[i], "--clusterMethod")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              clusterMethodChoice = std::stoi(argv[i+1]);
+              switch (clusterMethodChoice){
+                  case(1):
+                      clusterMethod = clusterMethod::EOM;
+                      break;
+                  case(2):
+                      clusterMethod = clusterMethod::Leaf;
+                      break;
+                  default:
+                      std::cerr << "Error: Invalid Cluster Method: " << clusterMethodChoice << "\n";
+                      return 1;
+              }
+              DEBUG_PRINT( "Cluster Method Selected: " << clusterMethodName(clusterMethod) << "\n");
+              i += 2; 
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
       else if (!strcmp(argv[i], "--minkowskiP")){
         if (i + 1 >= argc) {
             std::cerr << "Error: insufficient args provided\n";
@@ -245,6 +274,9 @@ int main(int argc, char** argv) {
           i += 1;
       }
   }
+    if (minPts == NULL){
+        minPts = 2;
+    }
     if (dimensions == NULL){
         std::cerr << "Dimensions Of Data Not Provided" << "\n";
         printUsage(argv[0]);
@@ -275,10 +307,6 @@ int main(int argc, char** argv) {
         }
         DEBUG_PRINT("Read " << points.size() << " points with " << dimensions 
                     << " dimensions (skipped " << skip_columns.size() << " columns).\n");
-        if (minPts == NULL){
-            minPts = log(points.size());
-            DEBUG_PRINT("No value for minPts provided, using log(numPoints)..." << "\n" << "MinPts: " << points.size() << "\n");
-        }
         // Print which columns were skipped
         if (!skip_columns.empty() && !quiet_mode) {
             DEBUG_PRINT("Skipped columns: ");
@@ -294,7 +322,7 @@ int main(int argc, char** argv) {
     }
 
 
-
+  min_cluster_size = max(20,min_cluster_size);
   int N = points.size();
   std::vector<std::vector<std::pair<int,double>>> knn_graph(points.size());
   std::vector<double> core_dist(points.size());
@@ -302,13 +330,16 @@ int main(int argc, char** argv) {
   auto root = buildKDTree(points);
 
   for (int i = 0; i < N; ++i) {
-      //    Prepare an empty max-heap
+      // 1) Prepare an empty max-heap
       std::priority_queue<std::pair<double,int>> heap;
 
-      //    Query the tree for point i
+      // 2) Query the tree for point i
       queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP);
-      //    Record core‐distance before you empty the heap
-      //    Since heap is max‐heap, the first popped distance = core distance
+      // 3) Extract neighbors (and record the core distance)
+      //    Since heap is max‐heap, after you pop minPts elements,
+      //    the last popped distance = core distance
+      double d_k = 0;
+      // 1) Record core‐distance before you empty the heap
       double coreDist = heap.top().first;
       if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
           core_dist[i] = std::sqrt(coreDist);
@@ -316,7 +347,6 @@ int main(int argc, char** argv) {
       else{
           core_dist[i] = coreDist;
       }
-      //    Extract neighbors
       std::vector<std::pair<int,double>> nbrs;
       nbrs.reserve(minPts);
       while (!heap.empty()) {
@@ -328,7 +358,7 @@ int main(int argc, char** argv) {
           nbrs.emplace_back(idx, d_sq);
       }
       }
-      // reverse to have neighbours in ascending order
+      // reverse to have them in ascending order if you like
       std::reverse(nbrs.begin(), nbrs.end());
       knn_graph[i] = std::move(nbrs);
   }
@@ -344,10 +374,8 @@ int main(int argc, char** argv) {
         printAndVerifyMutualReachability(points, core_dist, knn_graph, metric, minkowskiP);
     }
   // After you've built your knn_graph and converted to mutual reachability
-  // Retrieve Edges for Boruvka
   std::vector<Edge> all_edges = flatten(knn_graph);
-
-  // Sort By Weight
+  // Now you can sort by weight if needed
   constexpr size_t GPU_SORT_THRESHOLD = 1'000'000;
   std::cout << "[DEBUG] Before sort, first few weights:";
   for (size_t i = 0; i < std::min<size_t>(5, all_edges.size()); ++i)
@@ -374,6 +402,17 @@ int main(int argc, char** argv) {
   if (!quiet_mode) {
         printFirstNEdges(all_edges);
     }
+  std::ofstream ofs("all_edges.txt");
+  if(!ofs.is_open()) {
+	std::cerr << "Error:unable to open all_edges.txt for writing\n";
+  } else{
+	ofs << "# u v weight\n";
+	for( auto const& e: all_edges) {
+		ofs << e.u << " " << e.v << " " << e.weight << "\n";
+	}
+	ofs.close();
+	std::cout<< "[DEBUG] Wrote " << all_edges.size() << "edges to all_edges.txt\n";
+  }
   int numEdges = all_edges.size();
   ullong n_vertices = static_cast<ullong>(N);
   ullong n_edges = static_cast<ullong>(numEdges);
@@ -408,22 +447,20 @@ int main(int argc, char** argv) {
     DEBUG_PRINT( "Total MST edges: " << mst_edge_count << "\n");
     DEBUG_PRINT( "Expected MST edges: " << n_vertices - 1 << "\n");
 
+    // Post process MST into list of edges
+
     
     int N_pts = points.size();
     DEBUG_PRINT( "[DEBUG] Number of points (N_pts): " << N_pts << "\n");
 
-    DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
-
-    // Set min_cluster_size if not already set
-    if (min_cluster_size == NULL) {
-        min_cluster_size = max(20,minPts);  // or use minPts as default
-    }
+   DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
 
     // Call the single linkage clustering function
     std::vector<std::vector<int>> clusters = single_linkage_clustering(
         mst_edges, 
         N_pts, 
-        min_cluster_size
+        min_cluster_size,
+        clusterMethod
     );
 
     DEBUG_PRINT( "Single linkage clustering completed." << "\n");
@@ -445,5 +482,5 @@ int main(int argc, char** argv) {
         DEBUG_PRINT( "[DEBUG] Freed MST memory \n");
     }
 
-    return 0;  // Add return statement
+    return 0; 
 }
