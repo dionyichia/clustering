@@ -430,6 +430,37 @@ def _save_batch_and_create_config(batch_data: List[Dict], batch_dir: str, batch_
     
     return config
 
+def find_min_points_per_emitter(df, emitter_column='EmitterID'):
+    """
+    Find the number of points for each unique emitter and return the minimum.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        The dataset containing emitter data
+    emitter_column : str, default='EmitterID'
+        The column name that contains emitter identifiers
+    
+    Returns:
+    --------
+    int
+        The minimum number of points any emitter has in the dataset
+    """
+    if emitter_column not in df.columns:
+        raise ValueError(f"Column '{emitter_column}' not found in dataset")
+    
+    # Count points for each unique emitter
+    emitter_counts = df[emitter_column].value_counts()
+    
+    # Return the minimum count
+    min_points = int(emitter_counts.min())
+    
+    # Optional: Print some statistics for debugging
+    print(f"  Unique emitters: {len(emitter_counts)}")
+    print(f"  Points per emitter - Min: {min_points}, Max: {emitter_counts.max()}, Mean: {emitter_counts.mean():.1f}")
+    
+    return min_points
+
 def run_benchmark_with_visualization_batched(
     data_path=None,
     executable_path=None,
@@ -487,6 +518,15 @@ def run_benchmark_with_visualization_batched(
         
         # read only the features you want
         df = pd.read_csv(csv_file)
+
+        emitter_column = 'EmitterId'
+        # Find minimum points per emitter for this batch
+        try:
+            min_cluster_size = find_min_points_per_emitter(df, emitter_column)
+            print(f"  Min cluster size for {batch_name}: {min_points}")
+        except Exception as e:
+            print(f"  Error processing {batch_name}, defaulting to {min_cluster_size}: {e}")    
+
         feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
 
         if use_amp: feature_cols.append('Amp_S0(dBm)')

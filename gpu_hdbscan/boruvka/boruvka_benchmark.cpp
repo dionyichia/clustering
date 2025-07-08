@@ -546,23 +546,71 @@ std::pair<std::vector<Edge>, ullong> loadTestData(const std::string& filename) {
     return {edges, n_vertices};
 }
 
-// int main() {
-//     // Initialize GPU
-//     extern void initGPUs();
-//     initGPUs();
+// Function to read CSV and generate complete graph
+void generateCompleteGraphFromCSV(const std::string& csv_filename, const std::string& output_filename) {
+    std::ifstream file(csv_filename);
+    std::string line;
+    std::vector<std::vector<float>> vertices;
     
-//     // Run tests
-//     runTestSuite();
+    // Read CSV file
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string cell;
+        std::vector<float> vertex;
+        
+        while (std::getline(ss, cell, ',')) {
+            try {
+                vertex.push_back(std::stof(cell));
+            } catch (const std::exception& e) {
+                // Skip non-numeric values (like headers)
+                continue;
+            }
+        }
+        
+        if (!vertex.empty()) {
+            vertices.push_back(vertex);
+        }
+    }
+    file.close();
     
-//     // Run performance benchmark
-//     // runPerformanceBenchmark();
+    ullong n_vertices = vertices.size();
+    std::cout << "Read " << n_vertices << " vertices from " << csv_filename << std::endl;
     
-//     // Generate and save some test data
-//     // auto large_graph = GraphGenerator::generateRandomGraph(50000, 250000);
-//     // saveTestData("large_test_graph.txt", large_graph, 5000);
+    // Generate complete graph edges
+    std::vector<Edge> edges;
+    for (ullong i = 0; i < n_vertices; i++) {
+        for (ullong j = i + 1; j < n_vertices; j++) {
+            float weight = calculateDistance(vertices[i], vertices[j]);
+            edges.emplace_back(i, j, weight);
+        }
+    }
     
-//     // auto complete_graph = GraphGenerator::generateCompleteGraph(100);
-//     // saveTestData("complete_test_graph.txt", complete_graph, 100);
+    // Save using your existing function
+    saveTestData(output_filename, edges, n_vertices);
     
-//     return 0;
-// }
+    std::cout << "Generated complete graph with " << edges.size() << " edges" << std::endl;
+}
+
+int main() {
+    // Initialize GPU
+    extern void initGPUs();
+    initGPUs();
+
+    // Create edges txt file
+    generateCompleteGraphFromCSV("Data_Batch_8.csv", "complete_graph_edges.txt")
+    
+    // Run tests
+    // runTestSuite();
+    
+    // Run performance benchmark
+    // runPerformanceBenchmark();
+    
+    // Generate and save some test data
+    // auto large_graph = GraphGenerator::generateRandomGraph(50000, 250000);
+    // saveTestData("large_test_graph.txt", large_graph, 5000);
+    
+    // auto complete_graph = GraphGenerator::generateCompleteGraph(100);
+    // saveTestData("complete_test_graph.txt", complete_graph, 100);
+    
+    return 0;
+}
