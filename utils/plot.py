@@ -207,10 +207,9 @@ def plot_benchmark_results(df):
     plt.tight_layout()
     plt.savefig('gpu_hdbscan_benchmark.png', dpi=300, bbox_inches='tight')
 
-def plot_clusters_2d(X, labels, feature_names=None, title="GPU HDBSCAN Clustering Results", 
-                     save_path=None, use_plotly=False):
+def plot_clusters_2d(X, labels, feature_names=None, title="GPU HDBSCAN Clustering Results", save_path=None):
     """
-    Plot 2D clustering results using the first two features (pulse width and frequency)
+    Plot 2D clustering results using matplotlib and the first two features (pulse width and frequency).
     
     Parameters:
     -----------
@@ -223,9 +222,7 @@ def plot_clusters_2d(X, labels, feature_names=None, title="GPU HDBSCAN Clusterin
     title : str
         Plot title
     save_path : str, optional
-        Path to save the plot
-    use_plotly : bool
-        Whether to use Plotly for interactive plots
+        Path to save the plot (PNG)
     """
     
     # Use first two dimensions
@@ -235,77 +232,37 @@ def plot_clusters_2d(X, labels, feature_names=None, title="GPU HDBSCAN Clusterin
     if feature_names is None:
         feature_names = ['Pulse Width', 'Frequency']
     
-    # Get unique clusters (excluding noise if present)
+    # Get unique cluster labels
     unique_labels = np.unique(labels)
     n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
     noise_count = np.sum(labels == -1)
     
     print(f"Found {n_clusters} clusters and {noise_count} noise points")
-    
-    if use_plotly:
-        # Create interactive Plotly plot
-        df_plot = pd.DataFrame({
-            feature_names[0]: X_2d[:, 0],
-            feature_names[1]: X_2d[:, 1],
-            'Cluster': labels.astype(str)
-        })
-        
-        # Create color map for clusters
-        colors = px.colors.qualitative.Set1
-        color_map = {}
-        for i, label in enumerate(unique_labels):
-            if label == -1:
-                color_map[str(label)] = 'black'  # Noise points in black
-            else:
-                color_map[str(label)] = colors[i % len(colors)]
-        
-        fig = px.scatter(
-            df_plot,
-            x=feature_names[0],
-            y=feature_names[1],
-            color='Cluster',
-            title=f"{title}<br>Clusters: {n_clusters}, Noise points: {noise_count}",
-            color_discrete_map=color_map,
-            width=800,
-            height=600
-        )
-        
-        fig.update_traces(marker=dict(size=6, opacity=0.7))
-        fig.show()
-        
-        if save_path:
-            fig.write_html(save_path.replace('.png', '.html'))
-            
-    else:
-        # Create matplotlib plot
-        plt.figure(figsize=(12, 8))
-        
-        # Create color map
-        colors = plt.cm.Set1(np.linspace(0, 1, len(unique_labels)))
-        
-        for i, label in enumerate(unique_labels):
-            if label == -1:
-                # Plot noise points
-                mask = labels == label
-                plt.scatter(X_2d[mask, 0], X_2d[mask, 1], 
-                           c='black', marker='x', s=50, alpha=0.6, label='Noise')
-            else:
-                # Plot cluster points
-                mask = labels == label
-                plt.scatter(X_2d[mask, 0], X_2d[mask, 1], 
-                           c=[colors[i]], s=60, alpha=0.7, label=f'Cluster {label}')
-        
-        plt.xlabel(feature_names[0])
-        plt.ylabel(feature_names[1])
-        plt.title(f"{title}\nClusters: {n_clusters}, Noise points: {noise_count}")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        
-        plt.show()
+
+    # Setup plot
+    plt.figure(figsize=(12, 8))
+    colors = plt.cm.Set1(np.linspace(0, 1, len(unique_labels)))
+
+    for i, label in enumerate(unique_labels):
+        mask = labels == label
+        if label == -1:
+            plt.scatter(X_2d[mask, 0], X_2d[mask, 1],
+                        c='black', marker='x', s=50, alpha=0.6, label='Noise')
+        else:
+            plt.scatter(X_2d[mask, 0], X_2d[mask, 1],
+                        c=[colors[i]], s=60, alpha=0.7, label=f'Cluster {label}')
+
+    plt.xlabel(feature_names[0])
+    plt.ylabel(feature_names[1])
+    plt.title(f"{title}\nClusters: {n_clusters}, Noise points: {noise_count}")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+
+    plt.show()
 
 def visualize_high_dimensional_clusters(X, labels, feature_names=None, 
                                        method='pca', title="High-Dimensional Clustering",

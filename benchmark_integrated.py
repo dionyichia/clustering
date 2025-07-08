@@ -539,7 +539,7 @@ def run_benchmark_with_visualization_batched(
             dbscan_model.fit_predict, X_scaled  # Use scaled data
         )
         
-        # Evaluate clustering results with ground truth - UPDATED TO INCLUDE DBSCAN
+        # Evaluate clustering results with ground truth
         print("  -> Evaluating clustering results...")
         eval_results = evaluate_clustering_with_ground_truth(
             X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
@@ -547,7 +547,7 @@ def run_benchmark_with_visualization_batched(
         )
         evaluation_results.append(eval_results)
         
-        # collect performance results - UPDATED TO INCLUDE DBSCAN
+        # collect performance results 
         result = {
             'Batch': batch_name,
             'Samples': n_samples,

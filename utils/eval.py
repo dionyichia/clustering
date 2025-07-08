@@ -7,7 +7,7 @@ from sklearn.metrics import (
     v_measure_score
 )
 import pandas as pd
-from typing import List, Dict, Any,Tuple
+from typing import Dict, Any
 
 from utils.plot import *
 
@@ -40,14 +40,14 @@ def comprehensive_cluster_analysis(X, labels, feature_names=None, save_prefix="c
     results = {}
     
     # 1. 2D visualization using first two features
-    print("Creating 2D visualization...")
+    print("Creating 2D visualization of first 2 features...")
     plot_clusters_2d(X, labels, feature_names[:2], 
                      title="GPU HDBSCAN: Pulse Width vs Frequency",
                      save_path=f"{save_prefix}_2d.png")
     
     # 2. High-dimensional visualization if needed
     if X.shape[1] > 2:
-        print("Creating PCA visualization...")
+        print("Creating PCA visualization for all features...")
         X_pca = visualize_high_dimensional_clusters(X, labels, feature_names, 
                                                    method='pca',
                                                    title="GPU HDBSCAN: PCA Projection",
@@ -68,7 +68,7 @@ def comprehensive_cluster_analysis(X, labels, feature_names=None, save_prefix="c
     
     # 4. Create cluster summary table
     print("Creating cluster summary...")
-    summary_df = create_cluster_summary_table(X, labels, feature_names)
+    summary_df = per_cluster_statistics_summary(X, labels, feature_names)
     results['summary'] = summary_df
     
     # Save summary to CSV
@@ -234,7 +234,7 @@ def evaluate_clustering_quality(X, labels, feature_names=None):
     
     return metrics
 
-def create_cluster_summary_table(X, labels, feature_names=None):
+def per_cluster_statistics_summary(X, labels, feature_names=None):
     """
     Create a summary table of cluster statistics
     
