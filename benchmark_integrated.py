@@ -238,7 +238,7 @@ def generate_test_data(data_type='blobs', n_samples=1000):
     X = StandardScaler().fit_transform(X)
     return X, y
 
-def add_gaussian_noise(data_path, std_array=[1.0, 0.00021, 0.2, 0.2] ):
+def add_gaussian_noise(data_path, std_map):
     """
     Add Gaussian noise to specific columns in a dataset.
 
@@ -253,8 +253,8 @@ def add_gaussian_noise(data_path, std_array=[1.0, 0.00021, 0.2, 0.2] ):
 
     df = pd.read_csv(data_path)
 
-    columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
-    std_map = dict(zip(columns_to_noise, std_array))
+    columns_to_noise = list(std_map.keys())
+    print("Adding noise to columns: ", columns_to_noise)
 
     df_noisy = df.copy()
 
@@ -433,7 +433,8 @@ def run_benchmark_with_visualization_batched(
     data_path=None,
     executable_path=None,
     use_amp=False,
-    use_toa=False
+    use_toa=False,
+    use_lat_lng=False,
 ):
     """Enhanced benchmark function with cluster visualization"""
     # Define output folder
@@ -448,9 +449,16 @@ def run_benchmark_with_visualization_batched(
     gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
     # Test parameters
-    min_samples     = 3
-    min_cluster_size= 20
-    quiet_mode      = True
+    min_samples = 3
+    min_cluster_size = 20
+    quiet_mode = True
+
+    emitter_col = "EmitterId"
+
+    if use_lat_lng:
+        feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)', 'Latitude(deg)', 'Longitude(deg)']
+    else:
+        feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
     
     results = []
     evaluation_results = []
@@ -488,15 +496,11 @@ def run_benchmark_with_visualization_batched(
         # read only the features you want
         df = pd.read_csv(csv_file)
 
-        emitter_col = "EmitterId"
-
         # Try finding min points per emitter from all unique emitters in batch
         try: 
             min_cluster_size = max(20,find_min_points_per_emitter(df, emitter_col))
         except Exception as e:
             print(f"Error processing file: {e}")
-
-        feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
 
         if use_amp: feature_cols.append('Amp_S0(dBm)')
         if use_toa: feature_cols.append('TOA(ns)')
@@ -600,8 +604,6 @@ def run_benchmark_with_visualization_batched(
     
     return results_df, evaluation_results
 
-
-
 def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
     """Enhanced benchmark function with cluster visualization"""
     # Define output folder
@@ -641,9 +643,6 @@ def run_benchmark_with_visualization(data_path=None, executable_path=None, use_a
 
     else:
         print("Data file found")
-
-        # Chunk size can be taken as the maximum number of points in a batch
-        data = batch_data(data_path=data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
         
     for dataset in data:
         data_type = dataset.get('type')
@@ -758,27 +757,40 @@ if __name__ == "__main__":
         exit(1)
 
     # Make sure data file path exists
-    data_path = "./data/pdwInterns.csv"
+    data_path = "./data/pdwInterns_with_latlng.csv"
+    batch_path = "./data/batch_data"
+    batch_interval = 2 # TOA Interval in seconds
+
     if not os.path.exists(data_path):
         print(f"Date file not found at {data_path}")
         exit(1)
     
     # Run benchmark
+    use_lat_lng = True
+
     # if data path provided will use data file else will generate 2d data.
-    noisy_data_path = "./data/noisy_pdwInterns.csv"
-    std_array = [1.0, 0.00021, 0.2, 0.2] 
+    if use_lat_lng:
+        noisy_data_path = "./data/noisy_pdwInterns_with_latlng.csv"
+
+        std_array = [1.0, 0.00021, 0.2, 0.2, 0.1, 0.1] 
+        columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
+        std_map = dict(zip(columns_to_noise, std_array))
+    else:
+        noisy_data_path = "./data/noisy_pdwInterns.csv"
+
+        std_array = [1.0, 0.00021, 0.2, 0.2] 
+        columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
+        std_map = dict(zip(columns_to_noise, std_array))
 
     if not os.path.exists(noisy_data_path):
         print(f"Noisy Data not found at {noisy_data_path}")
-        noisy_data_path = add_gaussian_noise(data_path, std=std_array)
+        noisy_data_path = add_gaussian_noise(data_path, std_map=std_map)
     
-    # Testing Batched Functions
-    batch_path = "./data/batch_data"
-    
-    if os.path.exists(batch_path):
-        results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False) 
-    else:
-        results = run_benchmark_with_visualization(data_path=noisy_data_path, executable_path=executable_path, use_amp=False, use_toa=False)
+    if not os.path.exists(batch_path):
+        # Chunk size can be taken as the maximum number of points in a batch
+        data = batch_data(data_path=data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
+
+    results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
 
     print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
     print("Plots saved to 'gpu_hdbscan_benchmark.png'")
