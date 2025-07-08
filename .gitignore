@@ -14,7 +14,9 @@ chong/GPUfuncs/core_distance/gaia_dr2_ra_dec_50M.txt
 *extracted_data.txt
 
 # All data files
-data
-batch_data
-*pdwInterns.csv
-*.csv
+**/*.csv
+**/*.txt
+
+# Ignore all folders named 'data' or 'batch_data' anywhere
+**/data/
+**/batch_data/
