@@ -758,15 +758,15 @@ if __name__ == "__main__":
 
     # Make sure data file path exists
     data_path = "./data/pdwInterns_with_latlng.csv"
+    
     batch_path = "./data/batch_data"
     batch_interval = 2 # TOA Interval in seconds
+
+    use_lat_lng = True
 
     if not os.path.exists(data_path):
         print(f"Date file not found at {data_path}")
         exit(1)
-    
-    # Run benchmark
-    use_lat_lng = True
 
     # if data path provided will use data file else will generate 2d data.
     if use_lat_lng:
@@ -788,7 +788,7 @@ if __name__ == "__main__":
     
     if not os.path.exists(batch_path):
         # Chunk size can be taken as the maximum number of points in a batch
-        data = batch_data(data_path=data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
+        data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
     results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
 
