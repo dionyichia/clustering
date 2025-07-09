@@ -9,6 +9,7 @@ from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import glob
+import threading
 
 from utils.eval import *
 
@@ -445,6 +446,7 @@ def run_benchmark_with_visualization_batched(
     if not dbscan_params:
         print("No DBSCAN parameters loaded. Exiting.")
         return
+    
     # Initialize algorithm wrapper
     gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
@@ -498,7 +500,7 @@ def run_benchmark_with_visualization_batched(
 
         # Try finding min points per emitter from all unique emitters in batch
         try: 
-            min_cluster_size = max(20,find_min_points_per_emitter(df, emitter_col))
+            min_cluster_size = max(20, find_min_points_per_emitter(df, emitter_col))
         except Exception as e:
             print(f"Error processing file: {e}")
 
@@ -748,6 +750,426 @@ def run_benchmark_with_visualization(data_path=None, executable_path=None, use_a
     
     return df
 
+def timeout_handler(func, args, kwargs, timeout_duration):
+    """Run function with timeout"""
+    result = [None]
+    exception = [None]
+    
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            exception[0] = e
+    
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout_duration)
+    
+    if thread.is_alive():
+        return None, True, None  # result, timed_out, exception
+    else:
+        return result[0], False, exception[0]
+
+
+def track_performance_with_timeout(func, *args, timeout=300, **kwargs):
+    """Track execution time and memory usage with timeout"""
+    process = psutil.Process()
+    
+    # Get initial memory
+    initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+    
+    # Time the execution with timeout
+    start_time = time.time()
+    result, timed_out, exception = timeout_handler(func, args, kwargs, timeout)
+    end_time = time.time()
+    
+    execution_time = end_time - start_time
+    
+    if timed_out:
+        execution_time = timeout
+        result = None
+        print(f"Algo execution timed out > {timeout / 60} seconds")
+        
+    if exception:
+        raise exception
+    
+    # Get peak memory (approximation)
+    final_memory = process.memory_info().rss / 1024 / 1024  # MB
+    memory_used = max(0, final_memory - initial_memory)
+    
+    return result, execution_time, memory_used, timed_out
+
+
+def create_temp_csv(df):
+    """Create temporary CSV file for GPU HDBSCAN"""
+    temp_filename = f"temp_data_{int(time.time())}.csv"
+    df.to_csv(temp_filename, index=False)
+    return temp_filename
+
+
+def predict_completion_time(sample_sizes, times, target_size):
+    """Predict completion time using polynomial fitting without scipy"""
+    # Filter out None values and convert to numpy arrays
+    valid_indices = [i for i, t in enumerate(times) if t is not None]
+    if len(valid_indices) < 2:
+        return None
+
+    valid_sizes = np.array([sample_sizes[i] for i in valid_indices])
+    valid_times = np.array([times[i] for i in valid_indices])
+
+    try:
+        # Try quadratic fit
+        coeffs = np.polyfit(valid_sizes, valid_times, deg=2)  # a*x^2 + b*x + c
+        prediction = np.polyval(coeffs, target_size)
+
+        # Ensure prediction is reasonable
+        if prediction > 0 and prediction < 7200:
+            return prediction
+
+        # Fallback: linear extrapolation
+        if len(valid_times) >= 2:
+            slope = (valid_times[-1] - valid_times[-2]) / (valid_sizes[-1] - valid_sizes[-2])
+            prediction = valid_times[-1] + slope * (target_size - valid_sizes[-1])
+            return max(0, prediction)
+
+    except:
+        pass
+
+    return None
+
+def create_benchmark_plot(results_df, output_dir, timeout):
+    """Create professional benchmark visualization"""
+    
+    # Set style
+    plt.style.use('ggplot')
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle('Clustering Algorithm Performance Benchmark', fontsize=16, fontweight='bold')
+    
+    sample_sizes = results_df['Samples'].values
+    
+    # 1. Execution Time Comparison
+    ax1.set_title('Execution Time vs Sample Size', fontweight='bold')
+    
+    # Prepare data for plotting
+    gpu_times = []
+    sklearn_times = []
+    dbscan_times = []
+    
+    for _, row in results_df.iterrows():
+        gpu_times.append(row['GPU_Time'] if not row['GPU_Timeout'] else None)
+        sklearn_times.append(row['Sklearn_Time'] if not row['Sklearn_Timeout'] else None)
+        dbscan_times.append(row['DBSCAN_Time'] if not row['DBSCAN_Timeout'] else None)
+    
+    # Plot actual measurements
+    gpu_mask = [t is not None for t in gpu_times]
+    sklearn_mask = [t is not None for t in sklearn_times]
+    dbscan_mask = [t is not None for t in dbscan_times]
+    
+    if any(gpu_mask):
+        ax1.plot(np.array(sample_sizes)[gpu_mask], np.array(gpu_times)[gpu_mask], 
+                'o-', label='GPU HDBSCAN', linewidth=2, markersize=6)
+    
+    if any(sklearn_mask):
+        ax1.plot(np.array(sample_sizes)[sklearn_mask], np.array(sklearn_times)[sklearn_mask], 
+                's-', label='Sklearn HDBSCAN', linewidth=2, markersize=6)
+    
+    if any(dbscan_mask):
+        ax1.plot(np.array(sample_sizes)[dbscan_mask], np.array(dbscan_times)[dbscan_mask], 
+                '^-', label='DBSCAN', linewidth=2, markersize=6)
+    
+    # Store last valid points for each algorithm
+    last_gpu = None
+    last_sklearn = None
+    last_dbscan = None
+
+    gpu_color = ax1.plot([], [], 'o-', label='GPU HDBSCAN')[0].get_color()
+    sklearn_color = ax1.plot([], [], 's-', label='Sklearn HDBSCAN')[0].get_color()
+    dbscan_color = ax1.plot([], [], '^-', label='DBSCAN')[0].get_color()
+
+    for i, (size, gpu_time, sklearn_time, dbscan_time) in enumerate(zip(sample_sizes, gpu_times, sklearn_times, dbscan_times)):
+        # GPU HDBSCAN
+        if gpu_time is not None:
+            last_gpu = (size, gpu_time)
+        else:
+            prediction = predict_completion_time(sample_sizes[:i], gpu_times[:i], size)
+            if prediction and last_gpu:
+                ax1.plot([last_gpu[0], size], [last_gpu[1], prediction], linestyle='--', color=gpu_color, linewidth=1.5)
+                ax1.plot(size, prediction, 'o', color=gpu_color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                            xytext=(5, 5), textcoords='offset points', fontsize=8)
+
+        # Sklearn HDBSCAN
+        if sklearn_time is not None:
+            last_sklearn = (size, sklearn_time)
+        else:
+            prediction = predict_completion_time(sample_sizes[:i], sklearn_times[:i], size)
+            if prediction and last_sklearn:
+                ax1.plot([last_sklearn[0], size], [last_sklearn[1], prediction], linestyle='--', color=sklearn_color, linewidth=1.5)
+                ax1.plot(size, prediction, 's', color=sklearn_color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                            xytext=(5, 5), textcoords='offset points', fontsize=8)
+
+        # DBSCAN
+        if dbscan_time is not None:
+            last_dbscan = (size, dbscan_time)
+        else:
+            prediction = predict_completion_time(sample_sizes[:i], dbscan_times[:i], size)
+            if prediction and last_dbscan:
+                ax1.plot([last_dbscan[0], size], [last_dbscan[1], prediction], linestyle='--', color=dbscan_color, linewidth=1.5)
+                ax1.plot(size, prediction, '^', color=dbscan_color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                            xytext=(5, 5), textcoords='offset points', fontsize=8)
+    
+    # Add timeout line
+    ax1.axhline(y=timeout, color='red', linestyle='--', alpha=0.7, label=f'Timeout ({timeout/60:.0f}min)')
+    
+    ax1.set_xlabel('Number of Samples')
+    ax1.set_ylabel('Execution Time (seconds)')
+    # ax1.set_xscale('log') do not log 
+    # ax1.set_yscale('log') do not log time
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # 2. Memory Usage Comparison
+    ax2.set_title('Memory Usage vs Sample Size', fontweight='bold')
+    
+    memory_data = []
+    for col in ['GPU_Memory', 'Sklearn_Memory', 'DBSCAN_Memory']:
+        mask = results_df[col].notna()
+        if mask.any():
+            ax2.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
+                    'o-', label=col.replace('_Memory', ''), linewidth=2, markersize=6)
+    
+    ax2.set_xlabel('Number of Samples')
+    ax2.set_ylabel('Memory Usage (MB)')
+    ax2.set_xscale('log')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # 3. Clustering Quality (Homogeneity)
+    ax3.set_title('Clustering Quality (Homogeneity Score)', fontweight='bold')
+    
+    for col in ['GPU_Homogeneity', 'Sklearn_Homogeneity', 'DBSCAN_Homogeneity']:
+        mask = results_df[col].notna()
+        if mask.any():
+            ax3.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
+                    'o-', label=col.replace('_Homogeneity', ''), linewidth=2, markersize=6)
+    
+    ax3.set_xlabel('Number of Samples')
+    ax3.set_ylabel('Homogeneity Score')
+    ax3.set_xscale('log')
+    ax3.set_ylim(0, 1)
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    
+    # 4. Number of Clusters Found
+    ax4.set_title('Number of Clusters Found', fontweight='bold')
+    
+    for col in ['GPU_Clusters', 'Sklearn_Clusters', 'DBSCAN_Clusters']:
+        mask = results_df[col].notna()
+        if mask.any():
+            ax4.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
+                    'o-', label=col.replace('_Clusters', ''), linewidth=2, markersize=6)
+    
+    ax4.set_xlabel('Number of Samples')
+    ax4.set_ylabel('Number of Clusters')
+    ax4.set_xscale('log')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'speed_benchmark_comprehensive.png'), 
+                dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def print_benchmark_summary(results_df):
+    """Print a comprehensive benchmark summary"""
+    print("\n" + "="*80)
+    print("BENCHMARK SUMMARY")
+    print("="*80)
+    
+    # Performance summary
+    print("\nEXECUTION TIME SUMMARY:")
+    print("-" * 40)
+    
+    for _, row in results_df.iterrows():
+        print(f"Sample Size: {row['Samples']:,}")
+        
+        gpu_time = row['GPU_Time'] if not row['GPU_Timeout'] else f">{row['GPU_Time']:.0f}s (timeout)"
+        sklearn_time = row['Sklearn_Time'] if not row['Sklearn_Timeout'] else f">{row['Sklearn_Time']:.0f}s (timeout)"
+        dbscan_time = row['DBSCAN_Time'] if not row['DBSCAN_Timeout'] else f">{row['DBSCAN_Time']:.0f}s (timeout)"
+        
+        print(f"  GPU HDBSCAN:    {gpu_time}")
+        print(f"  Sklearn HDBSCAN: {sklearn_time}")
+        print(f"  DBSCAN:         {dbscan_time}")
+        print()
+    
+    # Calculate averages for non-timed-out results
+    print("AVERAGE PERFORMANCE (completed runs only):")
+    print("-" * 40)
+    
+    completed_gpu = results_df[~results_df['GPU_Timeout']]
+    completed_sklearn = results_df[~results_df['Sklearn_Timeout']]
+    completed_dbscan = results_df[~results_df['DBSCAN_Timeout']]
+    
+    if len(completed_gpu) > 0:
+        avg_gpu_time = completed_gpu['GPU_Time'].mean()
+        avg_gpu_homogeneity = completed_gpu['GPU_Homogeneity'].mean()
+        print(f"GPU HDBSCAN - Avg Time: {avg_gpu_time:.2f}s, Avg Homogeneity: {avg_gpu_homogeneity:.3f}")
+    
+    if len(completed_sklearn) > 0:
+        avg_sklearn_time = completed_sklearn['Sklearn_Time'].mean()
+        avg_sklearn_homogeneity = completed_sklearn['Sklearn_Homogeneity'].mean()
+        print(f"Sklearn HDBSCAN - Avg Time: {avg_sklearn_time:.2f}s, Avg Homogeneity: {avg_sklearn_homogeneity:.3f}")
+    
+    if len(completed_dbscan) > 0:
+        avg_dbscan_time = completed_dbscan['DBSCAN_Time'].mean()
+        avg_dbscan_homogeneity = completed_dbscan['DBSCAN_Homogeneity'].mean()
+        print(f"DBSCAN - Avg Time: {avg_dbscan_time:.2f}s, Avg Homogeneity: {avg_dbscan_homogeneity:.3f}")
+
+def run_speed_to_samples_benchmark(data_path, executable_path="./gpu_hdbscan_edited/build/gpu_hdbscan"):
+    """
+    Speed Benchmark of algos
+    """
+    if not os.path.exists(data_path):
+        print("Data file not found!\n")
+        return FileNotFoundError
+    
+    df = pd.read_csv(data_path)
+    max_num_samples = len(df)
+    print("Total num samples in File: ", max_num_samples)
+
+    # Test Params
+    output_dir = "speed_benchmark_outputs"
+    os.makedirs(output_dir, exist_ok=True)
+
+    num_samples_for_benchmark = [1000, 10000, 50000, 100000, 150000, 200000, 250000, 275000, 300000, 325000, 350000, 375000, 500000, 750000, 1000000]
+    num_samples_for_benchmark = [n for n in num_samples_for_benchmark if n <= max_num_samples]
+
+    feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)', 'Latitude(deg)', 'Longitude(deg)']
+    timeout = 5 * 60  # 5 minute timeout 
+    emitter_col = "EmitterId"
+    min_samples = 5
+    epsilon = 0.39
+    quiet_mode = True
+
+    # Initialize algorithm wrapper
+    gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
+    
+    results = []
+    evaluation_results = []
+    
+    # Get true labels if available
+    true_labels = df[emitter_col].values if emitter_col in df.columns else None
+    
+    # Scale data for DBSCAN
+    scaler = StandardScaler()
+
+    for num_samples in num_samples_for_benchmark:
+        print(f"\nProcessing {num_samples} samples...")
+        
+        # sub_df = df[:num_samples]  # Fixed: was using wrong variable name
+        sub_df = df.sample(n=num_samples, random_state=42)
+        
+        # Get true labels for this batch
+        batch_true_labels = true_labels[:num_samples] if true_labels is not None else None
+        
+        # Try finding min points per emitter from all unique emitters in batch
+        try: 
+            min_cluster_size = max(20, find_min_points_per_emitter(sub_df, emitter_col))
+        except Exception as e:
+            print(f"Error processing file: {e}")
+            min_cluster_size = 20
+        
+        # GPU HDBSCAN on the file directly
+        print("  -> Running GPU HDBSCAN...")
+        
+        X = sub_df[feature_cols].to_numpy()
+        X_scaled = scaler.fit_transform(X)
+        dims = X.shape[1]
+
+        # Create temporary CSV file
+        temp_csv_file = create_temp_csv(sub_df)
+        
+        # Track timing & memory around that call
+        gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
+            gpu_hdbscan.fit_predict_batched, 
+            temp_csv_file,
+            dims,
+            min_samples=min_samples,
+            min_cluster_size=min_cluster_size,
+            quiet_mode=quiet_mode,
+            timeout=timeout
+        )
+        
+        # Clean up temp file
+        if os.path.exists(temp_csv_file):
+            os.remove(temp_csv_file)
+        
+        # sklearn HDBSCAN for comparison
+        print("  -> Running sklearn HDBSCAN...")
+        # For num_samples greater than show below, sk-learn implementation runs out of memory and fails silently.
+        if num_samples > 250000:
+            sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = None, timeout, 0, True
+        else:
+            sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+            sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = track_performance_with_timeout(
+                sklearn_model.fit_predict, X, timeout=timeout
+            )
+
+        # DBSCAN for comparison
+        print("  -> Running sklearn DBSCAN...")
+        print(f"DBSCAN Parameters: min_samples={min_samples}, epsilon={epsilon}")
+        # For num_samples greater than show below, sk-learn implementation runs out of memory and fails silently.
+        if num_samples > 450000:
+            dbscan_labels, dbscan_time, dbscan_memory, dbscan_timeout = None, timeout, 0, True
+        else:
+            dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
+            dbscan_labels, dbscan_time, dbscan_memory, dbscan_timeout = track_performance_with_timeout(
+                dbscan_model.fit_predict, X_scaled, timeout=timeout
+            )
+        
+        # Calculate metrics
+        gpu_homogeneity = homogeneity_score(batch_true_labels, gpu_labels) if batch_true_labels is not None and gpu_labels is not None and not gpu_timeout else None
+        sklearn_homogeneity = homogeneity_score(batch_true_labels, sklearn_labels) if batch_true_labels is not None and sklearn_labels is not None and not sklearn_timeout else None
+        dbscan_homogeneity = homogeneity_score(batch_true_labels, dbscan_labels) if batch_true_labels is not None and dbscan_labels is not None and not dbscan_timeout else None
+        
+        # Collect performance results 
+        result = {
+            'Samples': num_samples,  # Fixed: was using undefined variable
+            'GPU_Time': gpu_time,
+            'Sklearn_Time': sklearn_time,
+            'DBSCAN_Time': dbscan_time,
+            'GPU_Memory': gpu_mem,
+            'Sklearn_Memory': sklearn_memory,
+            'DBSCAN_Memory': dbscan_memory,
+            'GPU_Clusters': len(np.unique(gpu_labels[gpu_labels != -1])) if gpu_labels is not None and not gpu_timeout else None,
+            'Sklearn_Clusters': len(np.unique(sklearn_labels[sklearn_labels != -1])) if sklearn_labels is not None and not sklearn_timeout else None,
+            'DBSCAN_Clusters': len(np.unique(dbscan_labels[dbscan_labels != -1])) if dbscan_labels is not None and not dbscan_timeout else None,
+            'GPU_Homogeneity': gpu_homogeneity,
+            'Sklearn_Homogeneity': sklearn_homogeneity,
+            'DBSCAN_Homogeneity': dbscan_homogeneity,
+            'GPU_Timeout': gpu_timeout,
+            'Sklearn_Timeout': sklearn_timeout,
+            'DBSCAN_Timeout': dbscan_timeout
+        }
+        results.append(result)
+    
+    # Save detailed summary
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(os.path.join(output_dir, 'speed_benchmark_summary_with_accuracy.csv'), index=False)
+    
+    # Create visualization
+    create_benchmark_plot(results_df, output_dir, timeout)
+    
+    # Print summary
+    print_benchmark_summary(results_df)
+    
+    return results_df, evaluation_results
+
 if __name__ == "__main__":
     # Make sure your executable is built
     executable_path = "./gpu_hdbscan_edited/build/gpu_hdbscan"
@@ -764,33 +1186,42 @@ if __name__ == "__main__":
 
     use_lat_lng = True
 
+    speed_benchmark = True # Benchmark for speed
+
     if not os.path.exists(data_path):
         print(f"Date file not found at {data_path}")
         exit(1)
 
-    # if data path provided will use data file else will generate 2d data.
-    if use_lat_lng:
-        noisy_data_path = "./data/noisy_pdwInterns_with_latlng.csv"
+    if speed_benchmark:
+        run_speed_to_samples_benchmark(data_path=data_path)
 
-        std_array = [1.0, 0.00021, 0.2, 0.2, 0.1, 0.1] 
-        columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
-        std_map = dict(zip(columns_to_noise, std_array))
+        print(f"\n Speed benchmark complete!'")
+        print("Plots saved to 'gpu_hdbscan_speed_benchmark.png'")
+
     else:
-        noisy_data_path = "./data/noisy_pdwInterns.csv"
+        # if data path provided will use data file else will generate 2d data.
+        if use_lat_lng:
+            noisy_data_path = "./data/noisy_pdwInterns_with_latlng.csv"
 
-        std_array = [1.0, 0.00021, 0.2, 0.2] 
-        columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
-        std_map = dict(zip(columns_to_noise, std_array))
+            std_array = [1.0, 0.00021, 0.2, 0.2, 0.1, 0.1] 
+            columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
+            std_map = dict(zip(columns_to_noise, std_array))
+        else:
+            noisy_data_path = "./data/noisy_pdwInterns.csv"
 
-    if not os.path.exists(noisy_data_path):
-        print(f"Noisy Data not found at {noisy_data_path}")
-        noisy_data_path = add_gaussian_noise(data_path, std_map=std_map)
-    
-    if not os.path.exists(batch_path):
-        # Chunk size can be taken as the maximum number of points in a batch
-        data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
+            std_array = [1.0, 0.00021, 0.2, 0.2] 
+            columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
+            std_map = dict(zip(columns_to_noise, std_array))
 
-    results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
+        if not os.path.exists(noisy_data_path):
+            print(f"Noisy Data not found at {noisy_data_path}")
+            noisy_data_path = add_gaussian_noise(data_path, std_map=std_map)
+        
+        if not os.path.exists(batch_path):
+            # Chunk size can be taken as the maximum number of points in a batch
+            data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
-    print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
-    print("Plots saved to 'gpu_hdbscan_benchmark.png'")
+        results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
+
+        print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
+        print("Plots saved to 'gpu_hdbscan_benchmark.png'")
