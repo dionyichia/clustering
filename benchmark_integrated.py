@@ -867,75 +867,118 @@ def create_benchmark_plot(results_df, output_dir, timeout):
     sklearn_mask = [t is not None for t in sklearn_times]
     dbscan_mask = [t is not None for t in dbscan_times]
     
+    # Plot lines and store colors
+    gpu_line = None
+    sklearn_line = None
+    dbscan_line = None
+    
     if any(gpu_mask):
-        ax1.plot(np.array(sample_sizes)[gpu_mask], np.array(gpu_times)[gpu_mask], 
-                'o-', label='GPU HDBSCAN', linewidth=2, markersize=6)
+        gpu_line = ax1.plot(np.array(sample_sizes)[gpu_mask], np.array(gpu_times)[gpu_mask], 
+                           'o-', label='GPU HDBSCAN', linewidth=2, markersize=6)[0]
     
     if any(sklearn_mask):
-        ax1.plot(np.array(sample_sizes)[sklearn_mask], np.array(sklearn_times)[sklearn_mask], 
-                's-', label='Sklearn HDBSCAN', linewidth=2, markersize=6)
+        sklearn_line = ax1.plot(np.array(sample_sizes)[sklearn_mask], np.array(sklearn_times)[sklearn_mask], 
+                               's-', label='Sklearn HDBSCAN', linewidth=2, markersize=6)[0]
     
     if any(dbscan_mask):
-        ax1.plot(np.array(sample_sizes)[dbscan_mask], np.array(dbscan_times)[dbscan_mask], 
-                '^-', label='DBSCAN', linewidth=2, markersize=6)
-    
-    # Store last valid points for each algorithm
-    last_gpu = None
-    last_sklearn = None
-    last_dbscan = None
+        dbscan_line = ax1.plot(np.array(sample_sizes)[dbscan_mask], np.array(dbscan_times)[dbscan_mask], 
+                              '^-', label='DBSCAN', linewidth=2, markersize=6)[0]
 
-    gpu_color = ax1.plot([], [], 'o-', label='GPU HDBSCAN')[0].get_color()
-    sklearn_color = ax1.plot([], [], 's-', label='Sklearn HDBSCAN')[0].get_color()
-    dbscan_color = ax1.plot([], [], '^-', label='DBSCAN')[0].get_color()
+    # Store predicted points
+    gpu_pred_x, gpu_pred_y = [], []
+    sklearn_pred_x, sklearn_pred_y = [], []
+    dbscan_pred_x, dbscan_pred_y = [], []
+
+    # Build valid data points for prediction
+    valid_gpu_data = [(s, t) for s, t in zip(sample_sizes, gpu_times) if t is not None]
+    valid_sklearn_data = [(s, t) for s, t in zip(sample_sizes, sklearn_times) if t is not None]
+    valid_dbscan_data = [(s, t) for s, t in zip(sample_sizes, dbscan_times) if t is not None]
 
     for i, (size, gpu_time, sklearn_time, dbscan_time) in enumerate(zip(sample_sizes, gpu_times, sklearn_times, dbscan_times)):
-        # GPU HDBSCAN
-        if gpu_time is not None:
-            last_gpu = (size, gpu_time)
-        else:
-            prediction = predict_completion_time(sample_sizes[:i], gpu_times[:i], size)
-            if prediction and last_gpu:
-                ax1.plot([last_gpu[0], size], [last_gpu[1], prediction], linestyle='--', color=gpu_color, linewidth=1.5)
-                ax1.plot(size, prediction, 'o', color=gpu_color, markersize=8, alpha=0.7)
+        # GPU HDBSCAN predictions
+        if gpu_time is None and len(valid_gpu_data) >= 2:
+            valid_sizes = [s for s, t in valid_gpu_data]
+            valid_times = [t for s, t in valid_gpu_data]
+            prediction = predict_completion_time(valid_sizes, valid_times, size)
+            if prediction and prediction > 0:
+                gpu_pred_x.append(size)
+                gpu_pred_y.append(prediction)
+                color = gpu_line.get_color() if gpu_line else 'blue'
+                ax1.plot(size, prediction, 'o', color=color, markersize=8, alpha=0.7)
                 ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
-                            xytext=(5, 5), textcoords='offset points', fontsize=8)
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
+        
+        # Sklearn HDBSCAN predictions
+        if sklearn_time is None and len(valid_sklearn_data) >= 2:
+            valid_sizes = [s for s, t in valid_sklearn_data]
+            valid_times = [t for s, t in valid_sklearn_data]
+            prediction = predict_completion_time(valid_sizes, valid_times, size)
+            if prediction and prediction > 0:
+                sklearn_pred_x.append(size)
+                sklearn_pred_y.append(prediction)
+                color = sklearn_line.get_color() if sklearn_line else 'orange'
+                ax1.plot(size, prediction, 's', color=color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
+        
+        # DBSCAN predictions
+        if dbscan_time is None and len(valid_dbscan_data) >= 2:
+            valid_sizes = [s for s, t in valid_dbscan_data]
+            valid_times = [t for s, t in valid_dbscan_data]
+            prediction = predict_completion_time(valid_sizes, valid_times, size)
+            if prediction and prediction > 0:
+                dbscan_pred_x.append(size)
+                dbscan_pred_y.append(prediction)
+                color = dbscan_line.get_color() if dbscan_line else 'green'
+                ax1.plot(size, prediction, '^', color=color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
 
-        # Sklearn HDBSCAN
-        if sklearn_time is not None:
-            last_sklearn = (size, sklearn_time)
+    # Plot predicted lines (dashed) - connect from last actual point to predictions
+    if gpu_pred_x and gpu_line:
+        # Get last actual point
+        actual_gpu_x = np.array(sample_sizes)[gpu_mask]
+        actual_gpu_y = np.array(gpu_times)[gpu_mask]
+        if len(actual_gpu_x) > 0:
+            # Connect last actual point to first predicted point, then all predicted points
+            all_pred_x = [actual_gpu_x[-1]] + gpu_pred_x
+            all_pred_y = [actual_gpu_y[-1]] + gpu_pred_y
+            ax1.plot(all_pred_x, all_pred_y, linestyle='--', color=gpu_line.get_color(), linewidth=1.5)
         else:
-            prediction = predict_completion_time(sample_sizes[:i], sklearn_times[:i], size)
-            if prediction and last_sklearn:
-                ax1.plot([last_sklearn[0], size], [last_sklearn[1], prediction], linestyle='--', color=sklearn_color, linewidth=1.5)
-                ax1.plot(size, prediction, 's', color=sklearn_color, markersize=8, alpha=0.7)
-                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
-                            xytext=(5, 5), textcoords='offset points', fontsize=8)
-
-        # DBSCAN
-        if dbscan_time is not None:
-            last_dbscan = (size, dbscan_time)
+            # If no actual points, just connect predicted points
+            ax1.plot(gpu_pred_x, gpu_pred_y, linestyle='--', color=gpu_line.get_color(), linewidth=1.5)
+    
+    if sklearn_pred_x and sklearn_line:
+        actual_sklearn_x = np.array(sample_sizes)[sklearn_mask]
+        actual_sklearn_y = np.array(sklearn_times)[sklearn_mask]
+        if len(actual_sklearn_x) > 0:
+            all_pred_x = [actual_sklearn_x[-1]] + sklearn_pred_x
+            all_pred_y = [actual_sklearn_y[-1]] + sklearn_pred_y
+            ax1.plot(all_pred_x, all_pred_y, linestyle='--', color=sklearn_line.get_color(), linewidth=1.5)
         else:
-            prediction = predict_completion_time(sample_sizes[:i], dbscan_times[:i], size)
-            if prediction and last_dbscan:
-                ax1.plot([last_dbscan[0], size], [last_dbscan[1], prediction], linestyle='--', color=dbscan_color, linewidth=1.5)
-                ax1.plot(size, prediction, '^', color=dbscan_color, markersize=8, alpha=0.7)
-                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
-                            xytext=(5, 5), textcoords='offset points', fontsize=8)
+            ax1.plot(sklearn_pred_x, sklearn_pred_y, linestyle='--', color=sklearn_line.get_color(), linewidth=1.5)
+    
+    if dbscan_pred_x and dbscan_line:
+        actual_dbscan_x = np.array(sample_sizes)[dbscan_mask]
+        actual_dbscan_y = np.array(dbscan_times)[dbscan_mask]
+        if len(actual_dbscan_x) > 0:
+            all_pred_x = [actual_dbscan_x[-1]] + dbscan_pred_x
+            all_pred_y = [actual_dbscan_y[-1]] + dbscan_pred_y
+            ax1.plot(all_pred_x, all_pred_y, linestyle='--', color=dbscan_line.get_color(), linewidth=1.5)
+        else:
+            ax1.plot(dbscan_pred_x, dbscan_pred_y, linestyle='--', color=dbscan_line.get_color(), linewidth=1.5)
     
     # Add timeout line
     ax1.axhline(y=timeout, color='red', linestyle='--', alpha=0.7, label=f'Timeout ({timeout/60:.0f}min)')
     
     ax1.set_xlabel('Number of Samples')
     ax1.set_ylabel('Execution Time (seconds)')
-    # ax1.set_xscale('log') do not log 
-    # ax1.set_yscale('log') do not log time
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     
     # 2. Memory Usage Comparison
     ax2.set_title('Memory Usage vs Sample Size', fontweight='bold')
     
-    memory_data = []
     for col in ['GPU_Memory', 'Sklearn_Memory', 'DBSCAN_Memory']:
         mask = results_df[col].notna()
         if mask.any():
@@ -983,7 +1026,6 @@ def create_benchmark_plot(results_df, output_dir, timeout):
     plt.savefig(os.path.join(output_dir, 'speed_benchmark_comprehensive.png'), 
                 dpi=300, bbox_inches='tight')
     plt.show()
-
 
 def print_benchmark_summary(results_df):
     """Print a comprehensive benchmark summary"""
