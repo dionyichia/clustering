@@ -284,7 +284,7 @@ def track_performance(func, *args, **kwargs):
     process = psutil.Process()
     
     # Get initial memory
-    initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+    initial_memory = process.memory_info().rss / 1024.0 / 1024.0  # MB
     
     # Time the execution
     start_time = time.time()
@@ -292,7 +292,7 @@ def track_performance(func, *args, **kwargs):
     end_time = time.time()
     
     # Get peak memory (approximation)
-    final_memory = process.memory_info().rss / 1024 / 1024  # MB
+    final_memory = process.memory_info().rss / 1024.0 / 1024.0  # MB
     memory_used = max(0, final_memory - initial_memory)
     
     execution_time = end_time - start_time
@@ -777,7 +777,7 @@ def track_performance_with_timeout(func, *args, timeout=300, **kwargs):
     process = psutil.Process()
     
     # Get initial memory
-    initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+    initial_memory = process.memory_info().rss / 1024.0 / 1024.0  # MB
     
     # Time the execution with timeout
     start_time = time.time()
@@ -795,7 +795,7 @@ def track_performance_with_timeout(func, *args, timeout=300, **kwargs):
         raise exception
     
     # Get peak memory (approximation)
-    final_memory = process.memory_info().rss / 1024 / 1024  # MB
+    final_memory = process.memory_info().rss / 1024.0 / 1024.0  # MB
     memory_used = max(0, final_memory - initial_memory)
     
     return result, execution_time, memory_used, timed_out
@@ -980,7 +980,7 @@ def create_benchmark_plot(results_df, output_dir, timeout):
     ax2.set_title('Memory Usage vs Sample Size', fontweight='bold')
     
     for col in ['GPU_Memory', 'Sklearn_Memory', 'DBSCAN_Memory']:
-        mask = results_df[col].notna()
+        mask = results_df[col].notna() & (results_df[col] != 0) 
         if mask.any():
             ax2.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
                     'o-', label=col.replace('_Memory', ''), linewidth=2, markersize=6)
@@ -1113,8 +1113,8 @@ def run_speed_to_samples_benchmark(data_path, executable_path="./gpu_hdbscan_edi
     for num_samples in num_samples_for_benchmark:
         print(f"\nProcessing {num_samples} samples...")
         
-        # sub_df = df[:num_samples]  # Fixed: was using wrong variable name
-        sub_df = df.sample(n=num_samples, random_state=42)
+        sub_df = df[:num_samples]  # Fixed: was using wrong variable name
+        # sub_df = df.sample(n=num_samples, random_state=42)
         
         # Get true labels for this batch
         batch_true_labels = true_labels[:num_samples] if true_labels is not None else None
@@ -1222,6 +1222,7 @@ if __name__ == "__main__":
 
     # Make sure data file path exists
     data_path = "./data/pdwInterns_with_latlng.csv"
+    data_path = "./data/pdwInterns"
     
     batch_path = "./data/batch_data"
     batch_interval = 2 # TOA Interval in seconds
