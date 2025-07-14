@@ -10,6 +10,13 @@ enum class clusterMethod{
     Leaf
 };
 
+// Add this structure to track noise during hierarchy building:
+struct NoiseInfo {
+    std::vector<int> noise_points;
+    std::vector<int> cluster_for_noise;  // which cluster each noise point joined
+};
+
+
 // Struct for Cluster Output Comparison 
 struct ClusterMetrics {
     double adjusted_rand_index;
@@ -21,6 +28,7 @@ struct ClusterMetrics {
     int total_points;
     int num_predicted_clusters;
     int num_true_clusters;
+    int noise_points;
 };
 
 // Structure to hold cluster selection choices
@@ -40,6 +48,7 @@ struct ClusterChoice {
 std::vector<std::vector<int>> single_linkage_clustering(
     const std::vector<Edge>& mst_edges,
     int N_pts,
+    NoiseInfo noise_info,
     int min_cluster_size = 2,
     clusterMethod clusterMethod = clusterMethod::EOM
 );
@@ -84,7 +93,7 @@ void collect_members(int c,
  */
 ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
                                 const std::vector<std::vector<int>>& predicted_clusters,
-                                int total_points);
+                                int total_points,NoiseInfo noise_info);
 
 /**
  * Print clustering evaluation results

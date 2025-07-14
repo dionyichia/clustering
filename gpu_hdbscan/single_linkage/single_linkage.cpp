@@ -140,6 +140,7 @@ void collect_members(int c,
 std::vector<std::vector<int>> single_linkage_clustering(
     const std::vector<Edge>& mst_edges,
     int N_pts,
+    NoiseInfo noise_info,
     int min_cluster_size,
     clusterMethod clusterMethod
 )
@@ -229,47 +230,105 @@ std::vector<std::vector<int>> single_linkage_clustering(
         int c1 = find_root(e.u), c2 = find_root(e.v);
         if(c1 == c2) continue;
 
-        // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
-        float lambda = 1.f / e.weight;
+        // KEY CHANGE: Check cluster sizes before merging
+        bool c1_significant = (sz[c1] >= min_cluster_size);
+        bool c2_significant = (sz[c2] >= min_cluster_size);
+
+        // if(edge_idx < 10) {
+        //     std::cout << "Processing edge " << edge_idx << ": " << e.u << "-" << e.v 
+        //               << " weight=" << e.weight << " lambda=" << lambda << std::endl;
+        //     std::cout << "  Merging clusters " << c1 << " (size=" << sz[c1] << ") and " 
+        //               << c2 << " (size=" << sz[c2] << ")" << std::endl;
+        // }
+
+        // if(edge_idx < 10) {
+        //     std::cout << "  C1 stability contribution: (" << birth_lambda[c1] << " - " << lambda 
+        //               << ") * " << sz[c1] << " = " << stability_c1 << std::endl;
+        //     std::cout << "  C2 stability contribution: (" << birth_lambda[c2] << " - " << lambda 
+        //               << ") * " << sz[c2] << " = " << stability_c2 << std::endl;
+        // }
+
+        if(c1_significant && c2_significant) {
+            // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
+            float lambda = 1.f / e.weight;
         
-        if(edge_idx < 10) {
-            std::cout << "Processing edge " << edge_idx << ": " << e.u << "-" << e.v 
-                      << " weight=" << e.weight << " lambda=" << lambda << std::endl;
-            std::cout << "  Merging clusters " << c1 << " (size=" << sz[c1] << ") and " 
-                      << c2 << " (size=" << sz[c2] << ")" << std::endl;
-        }
+            // Calculate stability contributions before merging
+            float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
+            float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
+            
+            // Set death lambda and record stability
+            death_lambda[c1] = death_lambda[c2] = lambda;
+            stability[c1] += stability_c1;
+            stability[c2] += stability_c2;
 
-        // Calculate stability contributions before merging
-        float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
-        float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
+            // make new cluster
+            int c_new = next_cluster_id++;
+            parent[c1] = parent[c2] = c_new;
+            parent[c_new] = c_new;
+            sz[c_new]           = sz[c1] + sz[c2];
+            birth_lambda[c_new] = lambda;
+            stability[c_new]    = 0;
+            death_lambda[c_new] = 0;
+            left_child[c_new]   = c1;
+            right_child[c_new]  = c2;
+        }
+        else if(c1_significant && !c2_significant) {
+            // c2 is too small - its points become noise in c1
+            std::vector<int> c2_members;
+            collect_members(c2, N_pts, left_child, right_child, c2_members);
+            
+            for(int p : c2_members) {
+                noise_info.noise_points.push_back(p);
+                noise_info.cluster_for_noise.push_back(c1);
+            }
+
+            // Merge c2 into c1 (but mark c2's points as noise)
+            sz[c1] += sz[c2];
+            parent[c2] = c1;
+        }
+        else if(!c1_significant && c2_significant) {
+            // c1 is too small - its points become noise in c2
+            std::vector<int> c1_members;
+            collect_members(c1, N_pts, left_child, right_child, c1_members);
+            
+            for(int p : c1_members) {
+                noise_info.noise_points.push_back(p);
+                noise_info.cluster_for_noise.push_back(c2);
+            }
+            
+            sz[c2] += sz[c1];
+            parent[c1] = c2;
+            
+        }
+        else{
+            // Both too small - normal merge but neither forms a "real" cluster yet
+            // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
+            float lambda = 1.f / e.weight;
         
-        if(edge_idx < 10) {
-            std::cout << "  C1 stability contribution: (" << birth_lambda[c1] << " - " << lambda 
-                      << ") * " << sz[c1] << " = " << stability_c1 << std::endl;
-            std::cout << "  C2 stability contribution: (" << birth_lambda[c2] << " - " << lambda 
-                      << ") * " << sz[c2] << " = " << stability_c2 << std::endl;
+            // Calculate stability contributions before merging
+            float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
+            float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
+            
+            // Set death lambda and record stability
+            death_lambda[c1] = death_lambda[c2] = lambda;
+            stability[c1] += stability_c1;
+            stability[c2] += stability_c2;
+
+            // make new cluster
+            int c_new = next_cluster_id++;
+            parent[c1] = parent[c2] = c_new;
+            parent[c_new] = c_new;
+            sz[c_new]           = sz[c1] + sz[c2];
+            birth_lambda[c_new] = lambda;
+            stability[c_new]    = 0;
+            death_lambda[c_new] = 0;
+            left_child[c_new]   = c1;
+            right_child[c_new]  = c2;
         }
-
-        // Set death lambda and record stability
-        death_lambda[c1] = death_lambda[c2] = lambda;
-        stability[c1] += stability_c1;
-        stability[c2] += stability_c2;
-
-        // make new cluster
-        int c_new = next_cluster_id++;
-        parent[c1] = parent[c2] = c_new;
-        parent[c_new] = c_new;
-        sz[c_new]           = sz[c1] + sz[c2];
-        birth_lambda[c_new] = lambda;
-        stability[c_new]    = 0;
-        death_lambda[c_new] = 0;
-        left_child[c_new]   = c1;
-        right_child[c_new]  = c2;
-
-        if(edge_idx < 10) {
-            std::cout << "  Created new cluster " << c_new << " with size " << sz[c_new] 
-                      << " at lambda=" << lambda << std::endl;
-        }
+        // if(edge_idx < 10) {
+        //         std::cout << "  Created new cluster " << c_new << " with size " << sz[c_new] 
+        //                 << " at lambda=" << lambda << std::endl;
+        // }
     }
 
     // supposed to have 2N-1 clusters since there will be N-1 merges from N-1 edges
@@ -331,6 +390,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
     );
     
     std::vector<int> final_clusters;
+
     switch(clusterMethod){
         case clusterMethod::EOM: {
         // === EXCESS OF MASS CLUSTER SELECTION===
@@ -349,7 +409,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
         //                     << ", stability=" << stability[c] << std::endl;
         //     }
         // }
-        std::cout << "\n=== EOM SELECTION DEBUG ===" << std::endl;
 
         std::cout << "\n=== Computing Optimal Cluster Selection ===" << std::endl;
 
@@ -448,6 +507,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
         std::cout << "Total stability: " << total_selected_stability << std::endl;
         break;
     }
+
     case clusterMethod::Leaf: {
         // === LEAF CLUSTER SELECTION ===
         final_clusters.reserve(N_pts);
@@ -494,7 +554,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
         collect_members(c, N_pts, left_child, right_child, mem);
         std::vector<int> this_cluster;
         for(int p : mem){
-            if(assignment[p] == -1){
+            if((std::find(noise_info.noise_points.begin(), noise_info.noise_points.end(), p) == noise_info.noise_points.end()) && (assignment[p] == -1)) {
                 assignment[p] = clusters.size();
                 this_cluster.push_back(p);
             }
@@ -657,10 +717,10 @@ double calculateBestMatchingAccuracy(const std::vector<int>& true_labels,
  */
 ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
                                 const std::vector<std::vector<int>>& predicted_clusters,
-                                int total_points) {
+                                int total_points,NoiseInfo noise_info) {
     
     ClusterMetrics metrics;
-    
+    int noise_points = 0;
     // Convert predicted clusters to label format
     std::vector<int> pred_labels(total_points, -1);  // -1 for noise/unassigned
     for (int cluster_id = 0; cluster_id < predicted_clusters.size(); ++cluster_id) {
@@ -670,8 +730,11 @@ ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
             }
         }
     }
-    
+    for (auto p: noise_info.noise_points){
+        noise_points += 1;
+    }
     // Basic statistics
+    metrics.noise_points = noise_points;
     metrics.total_points = total_points;
     metrics.num_predicted_clusters = predicted_clusters.size();
     std::set<int> unique_true(true_labels.begin(), true_labels.end());
@@ -736,6 +799,7 @@ void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode) {
     } else {
         std::cout << "\n=== Clustering Evaluation Results ===" << std::endl;
         std::cout << "Total points: " << metrics.total_points << std::endl;
+        std::cout << "Noise points: " << metrics.noise_points << std::endl;
         std::cout << "True clusters: " << metrics.num_true_clusters << std::endl;
         std::cout << "Predicted clusters: " << metrics.num_predicted_clusters << std::endl;
         std::cout << "\nMetrics:" << std::endl;

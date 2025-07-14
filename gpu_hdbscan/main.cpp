@@ -413,7 +413,7 @@ int main(int argc, char** argv) {
 // 	ofs.close();
 // 	std::cout<< "[DEBUG] Wrote " << all_edges.size() << "edges to all_edges.txt\n";
 //   }
-//   int numEdges = all_edges.size();
+  int numEdges = all_edges.size();
   ullong n_vertices = static_cast<ullong>(N);
   ullong n_edges = static_cast<ullong>(numEdges);
 
@@ -454,11 +454,12 @@ int main(int argc, char** argv) {
     DEBUG_PRINT( "[DEBUG] Number of points (N_pts): " << N_pts << "\n");
 
    DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
-
+    NoiseInfo noise_info;
     // Call the single linkage clustering function
     std::vector<std::vector<int>> clusters = single_linkage_clustering(
         mst_edges, 
         N_pts, 
+        noise_info,
         min_cluster_size,
         clusterMethod
     );
@@ -467,14 +468,14 @@ int main(int argc, char** argv) {
 
 
     if (!ground_truth_labels.empty() && ground_truth_labels.size() == N_pts) {
-        ClusterMetrics metrics = evaluateClustering(ground_truth_labels, clusters, N_pts);
+        ClusterMetrics metrics = evaluateClustering(ground_truth_labels, clusters, N_pts,noise_info);
         printClusteringEvaluation(metrics, quiet_mode);
     } else {
         DEBUG_PRINT("Warning: Ground truth labels not available or size mismatch. Skipping evaluation." << "\n");
         DEBUG_PRINT("Ground truth size: " << ground_truth_labels.size() << ", Points size: " << N_pts << "\n");
     }
     // Output cluster labels for Python parsing
-    outputClusterLabels(clusters, N_pts);
+    // outputClusterLabels(clusters, N_pts);
 
     // Clean up
     if (result.mst) {
