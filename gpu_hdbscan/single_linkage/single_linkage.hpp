@@ -44,6 +44,27 @@ std::vector<std::vector<int>> single_linkage_clustering(
     clusterMethod clusterMethod = clusterMethod::EOM
 );
 
+__global__ void finalize_stability_kernel(
+    const int* parent,
+    const int* sz,
+    const float* birth_lambda,
+    const float* death_lambda,
+    float* stability,
+    int num_clusters,
+    float lambda_max,
+    float lambda_min
+);
+
+void parallel_finalize_stability(
+    std::vector<int>& parent,
+    std::vector<int>& sz,
+    std::vector<float>& birth_lambda,
+    std::vector<float>& death_lambda,
+    std::vector<float>& stability,
+    float lambda_max,
+    float lambda_min
+);
+
 const char* clusterMethodName(clusterMethod m);
 
 // Helper function to collect members (can be made internal if not needed elsewhere)

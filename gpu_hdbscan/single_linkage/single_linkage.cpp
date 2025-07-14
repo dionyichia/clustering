@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iomanip>
 #include <stack>
+#include <hip/hip_runtime.h>
 
 const char* clusterMethodName(clusterMethod m) {
     switch (m) {
@@ -20,6 +21,91 @@ const char* clusterMethodName(clusterMethod m) {
       case clusterMethod::Leaf:        return "Leaf";
     }
     return "Unknown";
+}
+__global__ void finalize_stability_kernel(
+    const int* parent,
+    const int* sz,
+    const float* birth_lambda,
+    const float* death_lambda,
+    float* stability,
+    int num_clusters,
+    float lambda_max,
+    float lambda_min
+) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= num_clusters) return;
+
+    if (death_lambda[c] > 0) {
+        // already processed
+        return;
+    }
+
+    if (parent[c] == c) {
+        // Root node
+        // You may want to pass in num_connected_components for correct logic
+        // Assuming >1 connected components here for simplicity
+        float final_contribution = (lambda_max - lambda_min) * sz[c];
+        atomicAdd(&stability[c], final_contribution);
+    } else {
+        // Singleton that was never merged
+        float final_contribution = (birth_lambda[c] - lambda_min) * sz[c];
+        atomicAdd(&stability[c], final_contribution);
+    }
+}
+
+
+void parallel_finalize_stability(
+    std::vector<int>& parent,
+    std::vector<int>& sz,
+    std::vector<float>& birth_lambda,
+    std::vector<float>& death_lambda,
+    std::vector<float>& stability,
+    float lambda_max,
+    float lambda_min
+) {
+    int num_clusters = parent.size();
+    const size_t int_bytes = num_clusters * sizeof(int);
+    const size_t float_bytes = num_clusters * sizeof(float);
+
+    // Allocate device memory
+    int *d_parent, *d_sz;
+    float *d_birth_lambda, *d_death_lambda, *d_stability;
+
+    hipMalloc(&d_parent, int_bytes);
+    hipMalloc(&d_sz, int_bytes);
+    hipMalloc(&d_birth_lambda, float_bytes);
+    hipMalloc(&d_death_lambda, float_bytes);
+    hipMalloc(&d_stability, float_bytes);
+
+    // Copy data to device
+    hipMemcpy(d_parent, parent.data(), int_bytes, hipMemcpyHostToDevice);
+    hipMemcpy(d_sz, sz.data(), int_bytes, hipMemcpyHostToDevice);
+    hipMemcpy(d_birth_lambda, birth_lambda.data(), float_bytes, hipMemcpyHostToDevice);
+    hipMemcpy(d_death_lambda, death_lambda.data(), float_bytes, hipMemcpyHostToDevice);
+    hipMemcpy(d_stability, stability.data(), float_bytes, hipMemcpyHostToDevice);
+
+    // Kernel launch config
+    int threadsPerBlock = 256;
+    int blocks = (num_clusters + threadsPerBlock - 1) / threadsPerBlock;
+
+    // Launch kernel
+    hipLaunchKernelGGL(finalize_stability_kernel, dim3(blocks), dim3(threadsPerBlock), 0, 0,
+        d_parent, d_sz, d_birth_lambda, d_death_lambda, d_stability,
+        num_clusters, lambda_max, lambda_min
+    );
+
+    // Wait for kernel to finish
+    hipDeviceSynchronize();
+
+    // Copy result back
+    hipMemcpy(stability.data(), d_stability, float_bytes, hipMemcpyDeviceToHost);
+
+    // Free device memory
+    hipFree(d_parent);
+    hipFree(d_sz);
+    hipFree(d_birth_lambda);
+    hipFree(d_death_lambda);
+    hipFree(d_stability);
 }
 
 // Recursively gather all original points under cluster `c`.
@@ -63,13 +149,31 @@ std::vector<std::vector<int>> single_linkage_clustering(
     // Make a copy of mst_edges for sorting
     std::vector<Edge> edges_copy = mst_edges;
     assert(!edges_copy.empty());
+    
+    std::cout << "\n=== EDGE SORTING DEBUG ===" << std::endl;
+    std::cout << "First 5 edges before sorting:" << std::endl;
+    for(int i = 0; i < std::min(5, static_cast<int>(edges_copy.size())); ++i) {
+        std::cout << "  Edge " << i << ": " << edges_copy[i].u << "-" << edges_copy[i].v 
+                    << " weight=" << edges_copy[i].weight << std::endl;
+    }
+
+    std::sort(edges_copy.begin(), edges_copy.end(), [](const Edge& a, const Edge& b) {
+        return a.weight < b.weight;
+    });
+
+    std::cout << "First 5 edges after sorting:" << std::endl;
+    for(int i = 0; i < std::min(5, static_cast<int>(edges_copy.size())); ++i) {
+        std::cout << "  Edge " << i << ": " << edges_copy[i].u << "-" << edges_copy[i].v 
+                    << " weight=" << edges_copy[i].weight << std::endl;
+    }
+
     for (auto &e : edges_copy) {
-        assert(e.u >= 0 && e.u < N_pts);
-        assert(e.v >= 0 && e.v < N_pts);
-        assert(e.weight > 0);
+    assert(e.u >= 0 && e.u < N_pts);
+    assert(e.v >= 0 && e.v < N_pts);
+    assert(e.weight > 0);
     }
     std::cout << "[DEBUG] Edge assertions passed.\n";
-    
+
     int max_clusters = 2 * N_pts;
     std::vector<int> parent(max_clusters), sz(max_clusters);
     std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters), stability(max_clusters);
@@ -77,7 +181,9 @@ std::vector<std::vector<int>> single_linkage_clustering(
     
     // Guard against zero-length edges
     float smallest_weight = edges_copy.front().weight;
+    float largest_weight = edges_copy.back().weight;  // ADD THIS LINE
     std::cout << "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
+    std::cout << "[DEBUG] Raw largest weight: " << largest_weight << "\n";  // ADD THIS LINE
     if (smallest_weight <= 0.f) {
         smallest_weight = std::numeric_limits<float>::min();
         std::cout << "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
@@ -85,6 +191,8 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Compute lambda_max as the inverse of smallest_mrd
     float lambda_max = 1.f / smallest_weight;
+    float lambda_min = 1.f / largest_weight;  // ADD THIS LINE
+    
     std::cout << "[DEBUG] lambda_max: " << lambda_max << "\n";
     
     /* initialise all points as singleton clusters */
@@ -113,24 +221,39 @@ std::vector<std::vector<int>> single_linkage_clustering(
     };
 
     // Build hierarchy
-    for(auto &e : edges_copy){
-        // if nodes are already in the same cluster
-        // continue
+    std::cout << "\n=== HIERARCHY BUILDING DEBUG ===" << std::endl;
+    for(int edge_idx = 0; edge_idx < edges_copy.size(); ++edge_idx) {
+        auto &e = edges_copy[edge_idx];
+        
+        // if nodes are already in the same cluster, continue
         int c1 = find_root(e.u), c2 = find_root(e.v);
         if(c1 == c2) continue;
 
-        // else merge them
-
-        // lambda = 1 / MRD 
-        // decrease from lambda = infinity to lambda = 0
+        // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
         float lambda = 1.f / e.weight;
         
-        // if clusters merged, track their death lambda
-        death_lambda[c1] = death_lambda[c2] = lambda;
+        if(edge_idx < 10) {
+            std::cout << "Processing edge " << edge_idx << ": " << e.u << "-" << e.v 
+                      << " weight=" << e.weight << " lambda=" << lambda << std::endl;
+            std::cout << "  Merging clusters " << c1 << " (size=" << sz[c1] << ") and " 
+                      << c2 << " (size=" << sz[c2] << ")" << std::endl;
+        }
 
-        // record their stability as (birth - death * size)
-        stability[c1] += (birth_lambda[c1] - lambda) * sz[c1];
-        stability[c2] += (birth_lambda[c2] - lambda) * sz[c2];
+        // Calculate stability contributions before merging
+        float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
+        float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
+        
+        if(edge_idx < 10) {
+            std::cout << "  C1 stability contribution: (" << birth_lambda[c1] << " - " << lambda 
+                      << ") * " << sz[c1] << " = " << stability_c1 << std::endl;
+            std::cout << "  C2 stability contribution: (" << birth_lambda[c2] << " - " << lambda 
+                      << ") * " << sz[c2] << " = " << stability_c2 << std::endl;
+        }
+
+        // Set death lambda and record stability
+        death_lambda[c1] = death_lambda[c2] = lambda;
+        stability[c1] += stability_c1;
+        stability[c2] += stability_c2;
 
         // make new cluster
         int c_new = next_cluster_id++;
@@ -143,22 +266,70 @@ std::vector<std::vector<int>> single_linkage_clustering(
         left_child[c_new]   = c1;
         right_child[c_new]  = c2;
 
-        // std::cout << "[DEBUG] Merged clusters " << c1 << " and " << c2
-        //         << " into " << c_new << " at lambda=" << lambda << "\n";
+        if(edge_idx < 10) {
+            std::cout << "  Created new cluster " << c_new << " with size " << sz[c_new] 
+                      << " at lambda=" << lambda << std::endl;
+        }
     }
 
     // supposed to have 2N-1 clusters since there will be N-1 merges from N-1 edges
     std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
 
-    // Finalize singleton deaths
-    // Fix the finalization - add stability for ALL nodes that died
-    for(int c = 0; c < next_cluster_id; ++c){
-        if(death_lambda[c] > 0) {  
-            // Stability already accumulated during merging
-        } else if(parent[c] == c) {  // Root node - dies at lambda=0
-            stability[c] += (birth_lambda[c] - 0) * sz[c];
+    // IDENTIFY ROOT CLUSTERS AND CONNECTED COMPONENTS
+    std::vector<int> root_clusters;
+    for(int c = 0; c < next_cluster_id; ++c) {
+        if(parent[c] == c) {  // This is a root cluster
+            root_clusters.push_back(c);
         }
     }
+
+    int num_connected_components = root_clusters.size();
+    std::cout << "[DEBUG] Found " << num_connected_components << " connected components (roots): ";
+    for(int root : root_clusters) {
+        std::cout << root << " ";
+    }
+    std::cout << std::endl;
+
+    // Finalize singleton deaths
+    std::cout << "\n=== FINALIZING STABILITY DEBUG ===" << std::endl;
+    // Fix the finalization - add stability for ALL nodes that died
+    // for(int c = 0; c < next_cluster_id; ++c){
+    //     if(death_lambda[c] > 0) {  
+    //         // Already processed during merging
+    //         if(c < 20) {
+    //             std::cout << "Cluster " << c << " (merged): final stability=" << stability[c] << std::endl;
+    //         }
+    //     } else if(parent[c] == c) {  // Root node - dies at lambda=0
+    //         // APPLY ROOT CLUSTER LOGIC HERE
+    //         if(num_connected_components == 1) {
+    //             // Single root = artificial merge point, stability = 0
+    //             std::cout << "Single root cluster " << c << ": stability=0 (artificial merge)" << std::endl;
+    //             stability[c] = 0;
+    //         } else {
+    //             // Multiple roots = real connected components
+    //             float final_contribution = (lambda_max - lambda_min) * sz[c];
+    //             stability[c] += final_contribution;
+    //             std::cout << "Multi-root cluster " << c << ": adding final stability " << final_contribution 
+    //                       << " -> total=" << stability[c] << std::endl;
+    //         }
+    //     } else {
+    //         // Singleton that was never merged
+    //         float final_contribution = (birth_lambda[c] - lambda_min) * sz[c];  // CHANGED THIS LINE
+    //         stability[c] += final_contribution;
+    //         std::cout << "Singleton " << c << ": adding final stability " << final_contribution 
+    //                     << " -> total=" << stability[c] << std::endl;
+    //     }
+    // }
+    parallel_finalize_stability(
+        parent,
+        sz,
+        birth_lambda,
+        death_lambda,
+        stability,
+        lambda_max,
+        lambda_min
+    );
+    
     std::vector<int> final_clusters;
     switch(clusterMethod){
         case clusterMethod::EOM: {
@@ -168,6 +339,17 @@ std::vector<std::vector<int>> single_linkage_clustering(
         // Max Clusters Number Of Elements
         // Each Element Stores Total Stability of Selection and selected clusters
         std::vector<ClusterChoice> dp(max_clusters);
+
+        std::cout << "\n=== STABILITY SUMMARY ===" << std::endl;
+        // for(int c = 0; c < next_cluster_id; ++c) {
+        //     if(sz[c] >= min_cluster_size) {
+        //         std::cout << "Cluster " << c << ": size=" << sz[c] 
+        //                     << ", birth_lambda=" << birth_lambda[c]
+        //                     << ", death_lambda=" << death_lambda[c]
+        //                     << ", stability=" << stability[c] << std::endl;
+        //     }
+        // }
+        std::cout << "\n=== EOM SELECTION DEBUG ===" << std::endl;
 
         std::cout << "\n=== Computing Optimal Cluster Selection ===" << std::endl;
 
@@ -212,12 +394,19 @@ std::vector<std::vector<int>> single_linkage_clustering(
                         dp[R].selected_clusters.end()
                     );
                 }
+
+                // std::cout << "Internal " << c << " (size=" << sz[c] << "):" << std::endl;
+                // std::cout << "  Select self: stability=" << select_self.total_stability << std::endl;
+                // std::cout << "  Select descendants: stability=" << select_descendants.total_stability 
+                //         << " (from " << select_descendants.selected_clusters.size() << " clusters)" << std::endl;
                 
                 // Choose the option with higher total stability
                 if(select_self.total_stability >= select_descendants.total_stability) {
                     dp[c] = select_self;
+                    // std::cout << "  -> Selecting SELF" << std::endl;
                 } else {
                     dp[c] = select_descendants;
+                    // std::cout << "  -> Selecting DESCENDANTS" << std::endl;
                 }
             }
         }
@@ -226,6 +415,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
         std::vector<bool> is_selected(max_clusters, false);
 
         std::cout << "\n=== Extracting Final Clusters ===" << std::endl;
+        
 
         // Find root node(s) and extract their optimal solutions
         bool found_root = false;
@@ -240,21 +430,13 @@ std::vector<std::vector<int>> single_linkage_clustering(
                     if(!is_selected[selected]) {
                         is_selected[selected] = true;
                         final_clusters.push_back(selected);
-                        // std::cout << "[DEBUG] Selected cluster " << selected 
-                        //         << " (size=" << sz[selected] 
-                        //         << ", stability=" << stability[selected] << ")" << std::endl;
+                        std::cout << "[DEBUG] Selected cluster " << selected 
+                                << " (size=" << sz[selected] 
+                                << ", stability=" << stability[selected] << ")" << std::endl;
                     }
                 }
-                found_root = true;
-                // break; // Assuming single root (typical case)
             }
         }
-
-        if(!found_root) {
-            std::cerr << "[ERROR] No root cluster found! Check hierarchy construction." << std::endl;
-            return {};
-        }
-
         // Final validation and statistics
         std::cout << "\n=== Final Results ===" << std::endl;
         std::cout << "Selected " << final_clusters.size() << " clusters" << std::endl;
