@@ -108,7 +108,6 @@ void parallel_finalize_stability(
     hipFree(d_stability);
 }
 
-// Recursively gather all original points under cluster `c`.
 void collect_members(int c,
                      int N_pts,
                      const std::vector<int>& left_child,
@@ -140,33 +139,20 @@ void collect_members(int c,
 std::vector<std::vector<int>> single_linkage_clustering(
     const std::vector<Edge>& mst_edges,
     int N_pts,
-    NoiseInfo noise_info,
     int min_cluster_size,
     clusterMethod clusterMethod
 )
 {
     std::cout << "\n=== Running Single Linkage Clustering ===" << std::endl;
 
+    // ====== CLUSTER HIERARCHY TREE  ======
     // Make a copy of mst_edges for sorting
     std::vector<Edge> edges_copy = mst_edges;
     assert(!edges_copy.empty());
     
-    std::cout << "\n=== EDGE SORTING DEBUG ===" << std::endl;
-    std::cout << "First 5 edges before sorting:" << std::endl;
-    for(int i = 0; i < std::min(5, static_cast<int>(edges_copy.size())); ++i) {
-        std::cout << "  Edge " << i << ": " << edges_copy[i].u << "-" << edges_copy[i].v 
-                    << " weight=" << edges_copy[i].weight << std::endl;
-    }
-
     std::sort(edges_copy.begin(), edges_copy.end(), [](const Edge& a, const Edge& b) {
         return a.weight < b.weight;
     });
-
-    std::cout << "First 5 edges after sorting:" << std::endl;
-    for(int i = 0; i < std::min(5, static_cast<int>(edges_copy.size())); ++i) {
-        std::cout << "  Edge " << i << ": " << edges_copy[i].u << "-" << edges_copy[i].v 
-                    << " weight=" << edges_copy[i].weight << std::endl;
-    }
 
     for (auto &e : edges_copy) {
     assert(e.u >= 0 && e.u < N_pts);
@@ -182,9 +168,9 @@ std::vector<std::vector<int>> single_linkage_clustering(
     
     // Guard against zero-length edges
     float smallest_weight = edges_copy.front().weight;
-    float largest_weight = edges_copy.back().weight;  // ADD THIS LINE
+    float largest_weight = edges_copy.back().weight;  
     std::cout << "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
-    std::cout << "[DEBUG] Raw largest weight: " << largest_weight << "\n";  // ADD THIS LINE
+    std::cout << "[DEBUG] Raw largest weight: " << largest_weight << "\n"; 
     if (smallest_weight <= 0.f) {
         smallest_weight = std::numeric_limits<float>::min();
         std::cout << "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
@@ -192,7 +178,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Compute lambda_max as the inverse of smallest_mrd
     float lambda_max = 1.f / smallest_weight;
-    float lambda_min = 1.f / largest_weight;  // ADD THIS LINE
+    float lambda_min = 1.f / largest_weight;  
     
     std::cout << "[DEBUG] lambda_max: " << lambda_max << "\n";
     
@@ -230,110 +216,53 @@ std::vector<std::vector<int>> single_linkage_clustering(
         int c1 = find_root(e.u), c2 = find_root(e.v);
         if(c1 == c2) continue;
 
-        // KEY CHANGE: Check cluster sizes before merging
-        bool c1_significant = (sz[c1] >= min_cluster_size);
-        bool c2_significant = (sz[c2] >= min_cluster_size);
-
-        // if(edge_idx < 10) {
-        //     std::cout << "Processing edge " << edge_idx << ": " << e.u << "-" << e.v 
-        //               << " weight=" << e.weight << " lambda=" << lambda << std::endl;
-        //     std::cout << "  Merging clusters " << c1 << " (size=" << sz[c1] << ") and " 
-        //               << c2 << " (size=" << sz[c2] << ")" << std::endl;
-        // }
-
-        // if(edge_idx < 10) {
-        //     std::cout << "  C1 stability contribution: (" << birth_lambda[c1] << " - " << lambda 
-        //               << ") * " << sz[c1] << " = " << stability_c1 << std::endl;
-        //     std::cout << "  C2 stability contribution: (" << birth_lambda[c2] << " - " << lambda 
-        //               << ") * " << sz[c2] << " = " << stability_c2 << std::endl;
-        // }
-
-        if(c1_significant && c2_significant) {
-            // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
-            float lambda = 1.f / e.weight;
+        // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
+        float lambda = 1.f / e.weight;
+    
+        // Calculate stability contributions before merging
+        float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
+        float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
         
-            // Calculate stability contributions before merging
-            float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
-            float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
-            
-            // Set death lambda and record stability
-            death_lambda[c1] = death_lambda[c2] = lambda;
-            stability[c1] += stability_c1;
-            stability[c2] += stability_c2;
-
-            // make new cluster
-            int c_new = next_cluster_id++;
-            parent[c1] = parent[c2] = c_new;
-            parent[c_new] = c_new;
-            sz[c_new]           = sz[c1] + sz[c2];
-            birth_lambda[c_new] = lambda;
-            stability[c_new]    = 0;
-            death_lambda[c_new] = 0;
-            left_child[c_new]   = c1;
-            right_child[c_new]  = c2;
-        }
-        else if(c1_significant && !c2_significant) {
-            // c2 is too small - its points become noise in c1
-            std::vector<int> c2_members;
-            collect_members(c2, N_pts, left_child, right_child, c2_members);
-            
-            for(int p : c2_members) {
-                noise_info.noise_points.push_back(p);
-                noise_info.cluster_for_noise.push_back(c1);
-            }
-
-            // Merge c2 into c1 (but mark c2's points as noise)
-            sz[c1] += sz[c2];
-            parent[c2] = c1;
-        }
-        else if(!c1_significant && c2_significant) {
-            // c1 is too small - its points become noise in c2
-            std::vector<int> c1_members;
-            collect_members(c1, N_pts, left_child, right_child, c1_members);
-            
-            for(int p : c1_members) {
-                noise_info.noise_points.push_back(p);
-                noise_info.cluster_for_noise.push_back(c2);
-            }
-            
-            sz[c2] += sz[c1];
-            parent[c1] = c2;
-            
-        }
-        else{
-            // Both too small - normal merge but neither forms a "real" cluster yet
-            // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
-            float lambda = 1.f / e.weight;
-        
-            // Calculate stability contributions before merging
-            float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
-            float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
-            
-            // Set death lambda and record stability
-            death_lambda[c1] = death_lambda[c2] = lambda;
-            stability[c1] += stability_c1;
-            stability[c2] += stability_c2;
-
-            // make new cluster
-            int c_new = next_cluster_id++;
-            parent[c1] = parent[c2] = c_new;
-            parent[c_new] = c_new;
-            sz[c_new]           = sz[c1] + sz[c2];
-            birth_lambda[c_new] = lambda;
-            stability[c_new]    = 0;
-            death_lambda[c_new] = 0;
-            left_child[c_new]   = c1;
-            right_child[c_new]  = c2;
-        }
-        // if(edge_idx < 10) {
-        //         std::cout << "  Created new cluster " << c_new << " with size " << sz[c_new] 
-        //                 << " at lambda=" << lambda << std::endl;
-        // }
+        // Set death lambda and record stability
+        death_lambda[c1] = lambda;
+        death_lambda[c2] = lambda;
+        stability[c1] += stability_c1;
+        stability[c2] += stability_c2;
+        // make new cluster
+        int c_new = next_cluster_id++;
+        parent[c1] = parent[c2] = c_new;
+        parent[c_new] = c_new;
+        sz[c_new]           = sz[c1] + sz[c2];
+        birth_lambda[c_new] = lambda;
+        stability[c_new]    = 0;
+        death_lambda[c_new] = 0;
+        left_child[c_new]   = c1;
+        right_child[c_new]  = c2;
     }
+
 
     // supposed to have 2N-1 clusters since there will be N-1 merges from N-1 edges
     std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
 
+    // check every cluster made
+    // start from first NON-singleton cluster (hence i = N_pts)
+    // end at next_cluster_id
+    // if size of cluster less than min_cluster_size
+    // update its stability to be the sum of its singleton points stabilities
+    for(int i = N_pts; i < next_cluster_id;i++){
+        if (sz[i] < min_cluster_size){
+            std::vector<int> tmp;
+            collect_members(i, N_pts,left_child, right_child, tmp);
+            stability[i] = 0;
+            for (int point : tmp){
+                stability[i] += stability[point];
+            }
+        }
+        else{
+            ;
+        }
+    }
+    // ====== CONDENSE TREE ======
     // IDENTIFY ROOT CLUSTERS AND CONNECTED COMPONENTS
     std::vector<int> root_clusters;
     for(int c = 0; c < next_cluster_id; ++c) {
@@ -352,51 +281,51 @@ std::vector<std::vector<int>> single_linkage_clustering(
     // Finalize singleton deaths
     std::cout << "\n=== FINALIZING STABILITY DEBUG ===" << std::endl;
     // Fix the finalization - add stability for ALL nodes that died
-    // for(int c = 0; c < next_cluster_id; ++c){
-    //     if(death_lambda[c] > 0) {  
-    //         // Already processed during merging
-    //         if(c < 20) {
-    //             std::cout << "Cluster " << c << " (merged): final stability=" << stability[c] << std::endl;
-    //         }
-    //     } else if(parent[c] == c) {  // Root node - dies at lambda=0
-    //         // APPLY ROOT CLUSTER LOGIC HERE
-    //         if(num_connected_components == 1) {
-    //             // Single root = artificial merge point, stability = 0
-    //             std::cout << "Single root cluster " << c << ": stability=0 (artificial merge)" << std::endl;
-    //             stability[c] = 0;
-    //         } else {
-    //             // Multiple roots = real connected components
-    //             float final_contribution = (lambda_max - lambda_min) * sz[c];
-    //             stability[c] += final_contribution;
-    //             std::cout << "Multi-root cluster " << c << ": adding final stability " << final_contribution 
-    //                       << " -> total=" << stability[c] << std::endl;
-    //         }
-    //     } else {
-    //         // Singleton that was never merged
-    //         float final_contribution = (birth_lambda[c] - lambda_min) * sz[c];  // CHANGED THIS LINE
-    //         stability[c] += final_contribution;
-    //         std::cout << "Singleton " << c << ": adding final stability " << final_contribution 
-    //                     << " -> total=" << stability[c] << std::endl;
-    //     }
-    // }
-    parallel_finalize_stability(
-        parent,
-        sz,
-        birth_lambda,
-        death_lambda,
-        stability,
-        lambda_max,
-        lambda_min
-    );
+    for(int c = 0; c < next_cluster_id; ++c){
+        if(death_lambda[c] > 0) {  
+            // Already processed during merging
+            if(c < 20) {
+                std::cout << "Cluster " << c << " (merged): final stability=" << stability[c] << std::endl;
+            }
+        } else if(parent[c] == c) {  // Root node - dies at lambda=0
+            if(num_connected_components == 1) {
+                // Single root = artificial merge point, stability = 0
+                // std::cout << "Single root cluster " << c << ": stability=0 (artificial merge)" << std::endl;
+                stability[c] = 0;
+            } else {
+                // Multiple roots = real connected components
+                float final_contribution = (lambda_max - lambda_min) * sz[c];
+                stability[c] += final_contribution;
+                // std::cout << "Multi-root cluster " << c << ": adding final stability " << final_contribution 
+                //           << " -> total=" << stability[c] << std::endl;
+            }
+        } else {
+            // Singleton that was never merged
+            float final_contribution = (birth_lambda[c] - lambda_min) * sz[c];  // CHANGED THIS LINE
+            stability[c] += final_contribution;
+            // std::cout << "Singleton " << c << ": adding final stability " << final_contribution 
+            //             << " -> total=" << stability[c] << std::endl;
+        }
+    }
+    // parallel_finalize_stability(
+    //     parent,
+    //     sz,
+    //     birth_lambda,
+    //     death_lambda,
+    //     stability,
+    //     lambda_max,
+    //     lambda_min
+    // );
     
     std::vector<int> final_clusters;
 
+    // ====== CLUSTER SELECTION ======
     switch(clusterMethod){
         case clusterMethod::EOM: {
         // === EXCESS OF MASS CLUSTER SELECTION===
 
         // Dynamic Programming table
-        // Max Clusters Number Of Elements
+        // Number Of Elements == Max Clusters
         // Each Element Stores Total Stability of Selection and selected clusters
         std::vector<ClusterChoice> dp(max_clusters);
 
@@ -413,29 +342,23 @@ std::vector<std::vector<int>> single_linkage_clustering(
         std::cout << "\n=== Computing Optimal Cluster Selection ===" << std::endl;
 
         // Bottom-up DP: For each node, compute best selection in its subtree
-        for(int c = 0; c < next_cluster_id; ++c) {
+        for(int c = 0; c < next_cluster_id; ++c) {     
 
-            // if cluster is less than min size, ignore it
-            // stability = 0, no selected descendants
-            if(sz[c] < min_cluster_size) {
-                dp[c] = ClusterChoice(0.0f, {});
-                continue;
-            }
-            
-            // else, process cluster
-        
             int L = left_child[c], R = right_child[c];
             
             // if no children
             if(L == -1 && R == -1) {
                 // Leaf node: only choice is to select self (no children)
                 dp[c] = ClusterChoice(stability[c], {c});
-                std::cout << "[DEBUG] Leaf " << c << ": stability=" << stability[c] << std::endl;
+ //               std::cout << "[DEBUG] Leaf " << c << ": stability=" << stability[c] << std::endl;
             } else {
-                // Internal node: compare selecting self vs optimal descendants
+                // Internal node: compare choice of selecting self vs optimal descendants
                 ClusterChoice select_self(stability[c], {c});
                 ClusterChoice select_descendants(0.0f, {});
-                // Aggregate optimal solutions from children
+                // Check children
+                // If they are larger than MCS 
+                // add stability to choice of descendants stability 
+                // add points to choice of descendants points
                 if(L >= 0 && sz[L] >= min_cluster_size) {
                     select_descendants.total_stability += dp[L].total_stability;
                     select_descendants.selected_clusters.insert(
@@ -444,7 +367,12 @@ std::vector<std::vector<int>> single_linkage_clustering(
                         dp[L].selected_clusters.end()
                     );
                 }
-                // std::cout << "[DEBUG] Right Child " << R << ": Size=" << sz[R] << std::endl;
+                // If they are smaller than MCS
+                // add stability still
+                // don't add points to select_descendants points as they would be noise
+                else if(L >= 0 && sz[L] < min_cluster_size){
+                    select_descendants.total_stability += dp[L].total_stability;
+                }
                 if(R >= 0 && sz[R] >= min_cluster_size) {
                     select_descendants.total_stability += dp[R].total_stability;
                     select_descendants.selected_clusters.insert(
@@ -453,19 +381,14 @@ std::vector<std::vector<int>> single_linkage_clustering(
                         dp[R].selected_clusters.end()
                     );
                 }
-
-                // std::cout << "Internal " << c << " (size=" << sz[c] << "):" << std::endl;
-                // std::cout << "  Select self: stability=" << select_self.total_stability << std::endl;
-                // std::cout << "  Select descendants: stability=" << select_descendants.total_stability 
-                //         << " (from " << select_descendants.selected_clusters.size() << " clusters)" << std::endl;
-                
+                else if(R >= 0 && sz[R] < min_cluster_size){
+                    select_descendants.total_stability += dp[R].total_stability;
+                }
                 // Choose the option with higher total stability
                 if(select_self.total_stability >= select_descendants.total_stability) {
                     dp[c] = select_self;
-                    // std::cout << "  -> Selecting SELF" << std::endl;
                 } else {
                     dp[c] = select_descendants;
-                    // std::cout << "  -> Selecting DESCENDANTS" << std::endl;
                 }
             }
         }
@@ -475,7 +398,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
         std::cout << "\n=== Extracting Final Clusters ===" << std::endl;
         
-
         // Find root node(s) and extract their optimal solutions
         bool found_root = false;
         for(int c = 0; c < next_cluster_id; ++c) {
@@ -545,6 +467,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
         break;
     }
     }
+    // ==== LABELLING ====
     // Assign points to clusters
     std::vector<int> assignment(N_pts, -1);
     std::vector<std::vector<int>> clusters;
@@ -554,7 +477,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
         collect_members(c, N_pts, left_child, right_child, mem);
         std::vector<int> this_cluster;
         for(int p : mem){
-            if((std::find(noise_info.noise_points.begin(), noise_info.noise_points.end(), p) == noise_info.noise_points.end()) && (assignment[p] == -1)) {
+            if(assignment[p] == -1) {
                 assignment[p] = clusters.size();
                 this_cluster.push_back(p);
             }
@@ -717,7 +640,7 @@ double calculateBestMatchingAccuracy(const std::vector<int>& true_labels,
  */
 ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
                                 const std::vector<std::vector<int>>& predicted_clusters,
-                                int total_points,NoiseInfo noise_info) {
+                                int total_points) {
     
     ClusterMetrics metrics;
     int noise_points = 0;
@@ -728,11 +651,12 @@ ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
             if (point_id >= 0 && point_id < total_points) {
                 pred_labels[point_id] = cluster_id;
             }
+            if (point_id == -1){
+                noise_points += 1;
+            }
         }
     }
-    for (auto p: noise_info.noise_points){
-        noise_points += 1;
-    }
+
     // Basic statistics
     metrics.noise_points = noise_points;
     metrics.total_points = total_points;

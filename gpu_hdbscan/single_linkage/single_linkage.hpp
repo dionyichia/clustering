@@ -48,7 +48,6 @@ struct ClusterChoice {
 std::vector<std::vector<int>> single_linkage_clustering(
     const std::vector<Edge>& mst_edges,
     int N_pts,
-    NoiseInfo noise_info,
     int min_cluster_size = 2,
     clusterMethod clusterMethod = clusterMethod::EOM
 );
@@ -93,7 +92,7 @@ void collect_members(int c,
  */
 ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
                                 const std::vector<std::vector<int>>& predicted_clusters,
-                                int total_points,NoiseInfo noise_info);
+                                int total_points);
 
 /**
  * Print clustering evaluation results
