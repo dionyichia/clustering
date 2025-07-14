@@ -337,3 +337,224 @@ def visualize_high_dimensional_clusters(X, labels, feature_names=None,
     plt.show()
     
     return X_reduced
+
+
+
+def predict_completion_time(sample_sizes, times, target_size):
+    """Predict completion time using polynomial fitting without scipy"""
+    # Filter out None values and convert to numpy arrays
+    valid_indices = [i for i, t in enumerate(times) if t is not None]
+    if len(valid_indices) < 2:
+        return None
+
+    valid_sizes = np.array([sample_sizes[i] for i in valid_indices])
+    valid_times = np.array([times[i] for i in valid_indices])
+
+    try:
+        # Try quadratic fit
+        coeffs = np.polyfit(valid_sizes, valid_times, deg=2)  # a*x^2 + b*x + c
+        prediction = np.polyval(coeffs, target_size)
+
+        # Ensure prediction is reasonable
+        if prediction > 0 and prediction < 7200:
+            return prediction
+
+        # Fallback: linear extrapolation
+        if len(valid_times) >= 2:
+            slope = (valid_times[-1] - valid_times[-2]) / (valid_sizes[-1] - valid_sizes[-2])
+            prediction = valid_times[-1] + slope * (target_size - valid_sizes[-1])
+            return max(0, prediction)
+
+    except:
+        pass
+
+    return None
+
+def create_speed_benchmark_plot(results_df, output_dir, timeout):
+    """Create professional benchmark visualization"""
+    
+    # Set style
+    plt.style.use('ggplot')
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle('Clustering Algorithm Performance Benchmark', fontsize=16, fontweight='bold')
+    
+    sample_sizes = results_df['Samples'].values
+    
+    # 1. Execution Time Comparison
+    ax1.set_title('Execution Time vs Sample Size', fontweight='bold')
+    
+    # Prepare data for plotting
+    gpu_times = []
+    sklearn_times = []
+    dbscan_times = []
+    
+    for _, row in results_df.iterrows():
+        gpu_times.append(row['GPU_Time'] if not row['GPU_Timeout'] else None)
+        sklearn_times.append(row['Sklearn_Time'] if not row['Sklearn_Timeout'] else None)
+        dbscan_times.append(row['DBSCAN_Time'] if not row['DBSCAN_Timeout'] else None)
+    
+    # Plot actual measurements
+    gpu_mask = [t is not None for t in gpu_times]
+    sklearn_mask = [t is not None for t in sklearn_times]
+    dbscan_mask = [t is not None for t in dbscan_times]
+    
+    # Plot lines and store colors
+    gpu_line = None
+    sklearn_line = None
+    dbscan_line = None
+    
+    if any(gpu_mask):
+        gpu_line = ax1.plot(np.array(sample_sizes)[gpu_mask], np.array(gpu_times)[gpu_mask], 
+                           'o-', label='GPU HDBSCAN', linewidth=2, markersize=6)[0]
+    
+    if any(sklearn_mask):
+        sklearn_line = ax1.plot(np.array(sample_sizes)[sklearn_mask], np.array(sklearn_times)[sklearn_mask], 
+                               's-', label='Sklearn HDBSCAN', linewidth=2, markersize=6)[0]
+    
+    if any(dbscan_mask):
+        dbscan_line = ax1.plot(np.array(sample_sizes)[dbscan_mask], np.array(dbscan_times)[dbscan_mask], 
+                              '^-', label='DBSCAN', linewidth=2, markersize=6)[0]
+
+    # Store predicted points
+    gpu_pred_x, gpu_pred_y = [], []
+    sklearn_pred_x, sklearn_pred_y = [], []
+    dbscan_pred_x, dbscan_pred_y = [], []
+
+    # Build valid data points for prediction
+    valid_gpu_data = [(s, t) for s, t in zip(sample_sizes, gpu_times) if t is not None]
+    valid_sklearn_data = [(s, t) for s, t in zip(sample_sizes, sklearn_times) if t is not None]
+    valid_dbscan_data = [(s, t) for s, t in zip(sample_sizes, dbscan_times) if t is not None]
+
+    for i, (size, gpu_time, sklearn_time, dbscan_time) in enumerate(zip(sample_sizes, gpu_times, sklearn_times, dbscan_times)):
+        # GPU HDBSCAN predictions
+        if gpu_time is None and len(valid_gpu_data) >= 2:
+            valid_sizes = [s for s, t in valid_gpu_data]
+            valid_times = [t for s, t in valid_gpu_data]
+            prediction = predict_completion_time(valid_sizes, valid_times, size)
+            if prediction and prediction > 0:
+                gpu_pred_x.append(size)
+                gpu_pred_y.append(prediction)
+                color = gpu_line.get_color() if gpu_line else 'blue'
+                ax1.plot(size, prediction, 'o', color=color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
+        
+        # Sklearn HDBSCAN predictions
+        if sklearn_time is None and len(valid_sklearn_data) >= 2:
+            valid_sizes = [s for s, t in valid_sklearn_data]
+            valid_times = [t for s, t in valid_sklearn_data]
+            prediction = predict_completion_time(valid_sizes, valid_times, size)
+            if prediction and prediction > 0:
+                sklearn_pred_x.append(size)
+                sklearn_pred_y.append(prediction)
+                color = sklearn_line.get_color() if sklearn_line else 'orange'
+                ax1.plot(size, prediction, 's', color=color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
+        
+        # DBSCAN predictions
+        if dbscan_time is None and len(valid_dbscan_data) >= 2:
+            valid_sizes = [s for s, t in valid_dbscan_data]
+            valid_times = [t for s, t in valid_dbscan_data]
+            prediction = predict_completion_time(valid_sizes, valid_times, size)
+            if prediction and prediction > 0:
+                dbscan_pred_x.append(size)
+                dbscan_pred_y.append(prediction)
+                color = dbscan_line.get_color() if dbscan_line else 'green'
+                ax1.plot(size, prediction, '^', color=color, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{prediction/60:.1f}min', (size, prediction), 
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
+
+    # Plot predicted lines (dashed) - connect from last actual point to predictions
+    if gpu_pred_x and gpu_line:
+        # Get last actual point
+        actual_gpu_x = np.array(sample_sizes)[gpu_mask]
+        actual_gpu_y = np.array(gpu_times)[gpu_mask]
+        if len(actual_gpu_x) > 0:
+            # Connect last actual point to first predicted point, then all predicted points
+            all_pred_x = [actual_gpu_x[-1]] + gpu_pred_x
+            all_pred_y = [actual_gpu_y[-1]] + gpu_pred_y
+            ax1.plot(all_pred_x, all_pred_y, linestyle='--', color=gpu_line.get_color(), linewidth=1.5)
+        else:
+            # If no actual points, just connect predicted points
+            ax1.plot(gpu_pred_x, gpu_pred_y, linestyle='--', color=gpu_line.get_color(), linewidth=1.5)
+    
+    if sklearn_pred_x and sklearn_line:
+        actual_sklearn_x = np.array(sample_sizes)[sklearn_mask]
+        actual_sklearn_y = np.array(sklearn_times)[sklearn_mask]
+        if len(actual_sklearn_x) > 0:
+            all_pred_x = [actual_sklearn_x[-1]] + sklearn_pred_x
+            all_pred_y = [actual_sklearn_y[-1]] + sklearn_pred_y
+            ax1.plot(all_pred_x, all_pred_y, linestyle='--', color=sklearn_line.get_color(), linewidth=1.5)
+        else:
+            ax1.plot(sklearn_pred_x, sklearn_pred_y, linestyle='--', color=sklearn_line.get_color(), linewidth=1.5)
+    
+    if dbscan_pred_x and dbscan_line:
+        actual_dbscan_x = np.array(sample_sizes)[dbscan_mask]
+        actual_dbscan_y = np.array(dbscan_times)[dbscan_mask]
+        if len(actual_dbscan_x) > 0:
+            all_pred_x = [actual_dbscan_x[-1]] + dbscan_pred_x
+            all_pred_y = [actual_dbscan_y[-1]] + dbscan_pred_y
+            ax1.plot(all_pred_x, all_pred_y, linestyle='--', color=dbscan_line.get_color(), linewidth=1.5)
+        else:
+            ax1.plot(dbscan_pred_x, dbscan_pred_y, linestyle='--', color=dbscan_line.get_color(), linewidth=1.5)
+    
+    # Add timeout line
+    ax1.axhline(y=timeout, color='red', linestyle='--', alpha=0.7, label=f'Timeout ({timeout/60:.0f}min)')
+    
+    ax1.set_xlabel('Number of Samples')
+    ax1.set_ylabel('Execution Time (seconds)')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # 2. Memory Usage Comparison
+    ax2.set_title('Memory Usage vs Sample Size', fontweight='bold')
+    
+    for col in ['GPU_Memory', 'Sklearn_Memory', 'DBSCAN_Memory']:
+        mask = results_df[col].notna() & (results_df[col] != 0) 
+        if mask.any():
+            ax2.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
+                    'o-', label=col.replace('_Memory', ''), linewidth=2, markersize=6)
+    
+    ax2.set_xlabel('Number of Samples')
+    ax2.set_ylabel('Memory Usage (MB)')
+    ax2.set_xscale('log')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # 3. Clustering Quality (Homogeneity)
+    ax3.set_title('Clustering Quality (Homogeneity Score)', fontweight='bold')
+    
+    for col in ['GPU_Homogeneity', 'Sklearn_Homogeneity', 'DBSCAN_Homogeneity']:
+        mask = results_df[col].notna()
+        if mask.any():
+            ax3.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
+                    'o-', label=col.replace('_Homogeneity', ''), linewidth=2, markersize=6)
+    
+    ax3.set_xlabel('Number of Samples')
+    ax3.set_ylabel('Homogeneity Score')
+    ax3.set_xscale('log')
+    ax3.set_ylim(0, 1)
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    
+    # 4. Number of Clusters Found
+    ax4.set_title('Number of Clusters Found', fontweight='bold')
+    
+    for col in ['GPU_Clusters', 'Sklearn_Clusters', 'DBSCAN_Clusters']:
+        mask = results_df[col].notna()
+        if mask.any():
+            ax4.plot(results_df.loc[mask, 'Samples'], results_df.loc[mask, col], 
+                    'o-', label=col.replace('_Clusters', ''), linewidth=2, markersize=6)
+    
+    ax4.set_xlabel('Number of Samples')
+    ax4.set_ylabel('Number of Clusters')
+    ax4.set_xscale('log')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'speed_benchmark_comprehensive.png'), 
+                dpi=300, bbox_inches='tight')
+    plt.show()

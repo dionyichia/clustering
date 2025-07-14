@@ -285,3 +285,48 @@ def per_cluster_statistics_summary(X, labels, feature_names=None):
     # print(summary_df.to_string(index=False, float_format='%.3f'))
     
     return summary_df
+
+def print_speed_benchmark_summary(results_df):
+    """Print a comprehensive benchmark summary"""
+    print("\n" + "="*80)
+    print("BENCHMARK SUMMARY")
+    print("="*80)
+    
+    # Performance summary
+    print("\nEXECUTION TIME SUMMARY:")
+    print("-" * 40)
+    
+    for _, row in results_df.iterrows():
+        print(f"Sample Size: {row['Samples']:,}")
+        
+        gpu_time = row['GPU_Time'] if not row['GPU_Timeout'] else f">{row['GPU_Time']:.0f}s (timeout)"
+        sklearn_time = row['Sklearn_Time'] if not row['Sklearn_Timeout'] else f">{row['Sklearn_Time']:.0f}s (timeout)"
+        dbscan_time = row['DBSCAN_Time'] if not row['DBSCAN_Timeout'] else f">{row['DBSCAN_Time']:.0f}s (timeout)"
+        
+        print(f"  GPU HDBSCAN:    {gpu_time}")
+        print(f"  Sklearn HDBSCAN: {sklearn_time}")
+        print(f"  DBSCAN:         {dbscan_time}")
+        print()
+    
+    # Calculate averages for non-timed-out results
+    print("AVERAGE PERFORMANCE (completed runs only):")
+    print("-" * 40)
+    
+    completed_gpu = results_df[~results_df['GPU_Timeout']]
+    completed_sklearn = results_df[~results_df['Sklearn_Timeout']]
+    completed_dbscan = results_df[~results_df['DBSCAN_Timeout']]
+    
+    if len(completed_gpu) > 0:
+        avg_gpu_time = completed_gpu['GPU_Time'].mean()
+        avg_gpu_homogeneity = completed_gpu['GPU_Homogeneity'].mean()
+        print(f"GPU HDBSCAN - Avg Time: {avg_gpu_time:.2f}s, Avg Homogeneity: {avg_gpu_homogeneity:.3f}")
+    
+    if len(completed_sklearn) > 0:
+        avg_sklearn_time = completed_sklearn['Sklearn_Time'].mean()
+        avg_sklearn_homogeneity = completed_sklearn['Sklearn_Homogeneity'].mean()
+        print(f"Sklearn HDBSCAN - Avg Time: {avg_sklearn_time:.2f}s, Avg Homogeneity: {avg_sklearn_homogeneity:.3f}")
+    
+    if len(completed_dbscan) > 0:
+        avg_dbscan_time = completed_dbscan['DBSCAN_Time'].mean()
+        avg_dbscan_homogeneity = completed_dbscan['DBSCAN_Homogeneity'].mean()
+        print(f"DBSCAN - Avg Time: {avg_dbscan_time:.2f}s, Avg Homogeneity: {avg_dbscan_homogeneity:.3f}")
