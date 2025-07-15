@@ -10,6 +10,8 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import glob
 import threading
+import gc
+
 
 from utils.eval import *
 
@@ -466,7 +468,7 @@ def run_benchmark_with_visualization_batched(
     use_toa=False,
     use_lat_lng=False,
 ):
-    """Enhanced benchmark function with cluster visualization"""
+    """Enhanced benchmark function with cluster visualization and memory management"""
     # Define output folder
     output_dir = "benchmark_outputs"
     os.makedirs(output_dir, exist_ok=True)
@@ -507,108 +509,157 @@ def run_benchmark_with_visualization_batched(
     if not csv_paths:
         raise FileNotFoundError("No .csv files found in batch_data/")
     
+    # Memory monitoring function
+    def log_memory_usage(stage):
+        process = psutil.Process(os.getpid())
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        print(f"  Memory usage at {stage}: {memory_mb:.1f} MB")
+        return memory_mb
+    
     # Find Optimal Parameters for DBSCAN and HDBSCAN
     # 3) Loop over each batch file
-    for csv_file in csv_paths:
+    for i, csv_file in enumerate(csv_paths):
         batch_filename = os.path.basename(csv_file)
-        # derive a name & sample count
         batch_name = os.path.splitext(os.path.basename(csv_file))[0]
+        
+        print(f"\n=== Processing batch {i+1}/{len(csv_paths)}: {batch_name} ===")
+        log_memory_usage("start of batch")
+        
         if batch_filename not in dbscan_params:
             print(f"No parameters found for {batch_filename}, skipping...")
             continue
+        
         min_samples, epsilon = dbscan_params[batch_filename]
 
         # count data rows (minus header)
         with open(csv_file, 'r') as f:
             n_samples = sum(1 for _ in f) - 1
         
-        print(f"\n=== Processing batch {batch_name} ({n_samples} rows) ===")
+        print(f"Processing {n_samples} rows")
         
-        # read only the features you want
-        df = pd.read_csv(csv_file)
+        try:
+            # Read data in a try-except block to handle memory issues
+            df = pd.read_csv(csv_file)
+            log_memory_usage("after reading CSV")
 
-        # Try finding min points per emitter from all unique emitters in batch
-        try: 
-            min_cluster_size = max(20, find_min_points_per_emitter(df, emitter_col))
+            # Try finding min points per emitter from all unique emitters in batch
+            try: 
+                min_cluster_size = max(20, find_min_points_per_emitter(df, emitter_col))
+            except Exception as e:
+                print(f"Error processing file: {e}")
+
+            if use_amp: feature_cols.append('Amp_S0(dBm)')
+            if use_toa: feature_cols.append('TOA(ns)')
+            
+            X = df[feature_cols].to_numpy()
+            log_memory_usage("after creating feature matrix")
+            
+            # Scale the data for DBSCAN
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            log_memory_usage("after scaling")
+
+            true_labels = df['EmitterId'].to_numpy()
+            
+            # Clear df early to free memory
+            del df
+            gc.collect()
+            log_memory_usage("after clearing DataFrame")
+            
+            # GPU HDBSCAN on the file directly
+            print("  -> Running GPU HDBSCAN...")
+            dims = X.shape[1]
+            
+            gpu_labels, gpu_time, gpu_mem = track_performance(
+                gpu_hdbscan.fit_predict_batched, csv_file,
+                dims,
+                min_samples=min_samples,
+                min_cluster_size=min_cluster_size,
+                quiet_mode=quiet_mode
+            )
+            log_memory_usage("after GPU HDBSCAN")
+            
+            # sklearn HDBSCAN for comparison
+            print("  -> Running sklearn HDBSCAN...")
+            sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+            sklearn_labels, sklearn_time, sklearn_memory = track_performance(
+                sklearn_model.fit_predict, X
+            )
+            
+            # Explicitly delete the model to free memory
+            del sklearn_model
+            gc.collect()
+            log_memory_usage("after sklearn HDBSCAN")
+
+            # DBSCAN for comparison - with memory management
+            print("  -> Running sklearn DBSCAN with optimal epsilon and minPoints...")
+            print(f"DBSCAN Parameters: min_samples={min_samples}, epsilon={epsilon}")
+            
+            # Create DBSCAN model in a separate scope for better memory management
+            dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
+            dbscan_labels, dbscan_time, dbscan_memory = track_performance(
+                dbscan_model.fit_predict, X_scaled
+            )
+            
+            # Explicitly delete DBSCAN model and scaled data
+            del dbscan_model
+            del X_scaled
+            gc.collect()
+            log_memory_usage("after DBSCAN")
+            
+            # Evaluate clustering results with ground truth
+            print("  -> Evaluating clustering results...")
+            eval_results = evaluate_clustering_with_ground_truth(
+                X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
+                batch_name, feature_cols, gpu_time, sklearn_time, dbscan_time, output_dir
+            )
+            evaluation_results.append(eval_results)
+            
+            # collect performance results 
+            result = {
+                'Batch': batch_name,
+                'Samples': n_samples,
+                'GPU_Time': gpu_time,
+                'Sklearn_Time': sklearn_time,
+                'DBSCAN_Time': dbscan_time,
+                'GPU_Memory': gpu_mem,
+                'Sklearn_Memory': sklearn_memory,
+                'DBSCAN_Memory': dbscan_memory,
+                'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'],
+                'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'],
+                'DBSCAN_Clusters': eval_results['dbscan_metrics']['N_Clusters'],
+                'True_Clusters': eval_results['ground_truth_stats']['N_True_Clusters'],
+                # Add accuracy metrics
+                'GPU_ARI': eval_results['gpu_metrics']['ARI'],
+                'GPU_NMI': eval_results['gpu_metrics']['NMI'],
+                'GPU_V_Measure': eval_results['gpu_metrics']['V_Measure'],
+                'Sklearn_ARI': eval_results['sklearn_metrics']['ARI'],
+                'Sklearn_NMI': eval_results['sklearn_metrics']['NMI'],
+                'Sklearn_V_Measure': eval_results['sklearn_metrics']['V_Measure'],
+                'DBSCAN_ARI': eval_results['dbscan_metrics']['ARI'],
+                'DBSCAN_NMI': eval_results['dbscan_metrics']['NMI'],
+                'DBSCAN_V_Measure': eval_results['dbscan_metrics']['V_Measure'],
+                'Algorithm_Agreement_ARI': eval_results['algorithm_agreement']['ARI'],
+            }
+            results.append(result)
+            
+            # Clean up variables at the end of each batch
+            del X, gpu_labels, sklearn_labels, dbscan_labels, true_labels
+            del eval_results, result
+            gc.collect()
+            
+            log_memory_usage("end of batch")
+            
+        except MemoryError as e:
+            print(f"Memory error processing batch {batch_name}: {e}")
+            # Force garbage collection and continue to next batch
+            gc.collect()
+            continue
         except Exception as e:
-            print(f"Error processing file: {e}")
-
-        if use_amp: feature_cols.append('Amp_S0(dBm)')
-        if use_toa: feature_cols.append('TOA(ns)')
-        
-        X = df[feature_cols].to_numpy()
-        
-        # Scale the data for DBSCAN
-        # technically our HDBSCAN uses MinMaxScaling
-        # if i change to MinMaxScaler, will need to recompute optimal epsilon and min_samples
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
-        true_labels = df['EmitterId'].to_numpy()
-        
-        # GPU HDBSCAN on the file directly
-        print("  -> Running GPU HDBSCAN...")
-        dims = X.shape[1]
-        
-        # track timing & memory around that call if you like:
-        gpu_labels, gpu_time, gpu_mem = track_performance(
-            gpu_hdbscan.fit_predict_batched, csv_file,
-            dims,
-            min_samples=min_samples,
-            min_cluster_size=min_cluster_size,
-            quiet_mode=quiet_mode
-        )
-        
-        # sklearn HDBSCAN for comparison
-        print("  -> Running sklearn HDBSCAN...")
-        sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
-        sklearn_labels, sklearn_time, sklearn_memory = track_performance(
-            sklearn_model.fit_predict, X
-        )
-
-        # DBSCAN for comparison - FIXED VERSION
-        print("  -> Running sklearn DBSCAN with optimal epsilon and minPoints...")
-        print(f"DBSCAN Parameters: min_samples={min_samples}, epsilon={epsilon}")
-        dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
-        dbscan_labels, dbscan_time, dbscan_memory = track_performance(
-            dbscan_model.fit_predict, X_scaled  # Use scaled data
-        )
-        
-        # Evaluate clustering results with ground truth
-        print("  -> Evaluating clustering results...")
-        eval_results = evaluate_clustering_with_ground_truth(
-            X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
-            batch_name, feature_cols, gpu_time, sklearn_time, dbscan_time, output_dir
-        )
-        evaluation_results.append(eval_results)
-        
-        # collect performance results 
-        result = {
-            'Batch': batch_name,
-            'Samples': n_samples,
-            'GPU_Time': gpu_time,
-            'Sklearn_Time': sklearn_time,
-            'DBSCAN_Time': dbscan_time,
-            'GPU_Memory': gpu_mem,
-            'Sklearn_Memory': sklearn_memory,
-            'DBSCAN_Memory': dbscan_memory,
-            'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'],
-            'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'],
-            'DBSCAN_Clusters': eval_results['dbscan_metrics']['N_Clusters'],
-            'True_Clusters': eval_results['ground_truth_stats']['N_True_Clusters'],
-            # Add accuracy metrics
-            'GPU_ARI': eval_results['gpu_metrics']['ARI'],
-            'GPU_NMI': eval_results['gpu_metrics']['NMI'],
-            'GPU_V_Measure': eval_results['gpu_metrics']['V_Measure'],
-            'Sklearn_ARI': eval_results['sklearn_metrics']['ARI'],
-            'Sklearn_NMI': eval_results['sklearn_metrics']['NMI'],
-            'Sklearn_V_Measure': eval_results['sklearn_metrics']['V_Measure'],
-            'DBSCAN_ARI': eval_results['dbscan_metrics']['ARI'],
-            'DBSCAN_NMI': eval_results['dbscan_metrics']['NMI'],
-            'DBSCAN_V_Measure': eval_results['dbscan_metrics']['V_Measure'],
-            'Algorithm_Agreement_ARI': eval_results['algorithm_agreement']['ARI'],
-        }
-        results.append(result)
+            print(f"Error processing batch {batch_name}: {e}")
+            # Clean up and continue
+            gc.collect()
+            continue
     
     # save detailed summary
     results_df = pd.DataFrame(results)
@@ -634,6 +685,12 @@ def run_benchmark_with_visualization_batched(
     print(f"Algorithm Agreement: {avg_agreement:.3f}")
     
     return results_df, evaluation_results
+
+# Additional utility function for memory management
+def force_memory_cleanup():
+    """Force aggressive memory cleanup"""
+    gc.collect()
+    gc.collect() 
 
 def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
     """Enhanced benchmark function with cluster visualization"""

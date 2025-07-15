@@ -78,7 +78,6 @@ def create_comprehensive_clustering_plot(
     • True Clusters: {gt_stats['N_True_Clusters']}
     
     GPU HDBSCAN vs Ground Truth:
-    • ARI: {gpu_metrics['ARI']:.3f}
     • Time: {gpu_metrics['time']:.3f}
     • V-Measure: {gpu_metrics['V_Measure']:.3f}
     • Clusters Found: {gpu_metrics['N_Clusters']}
@@ -86,25 +85,22 @@ def create_comprehensive_clustering_plot(
     • Homogeneity: {gpu_metrics['Homogeneity']}
     
     Sklearn HDBSCAN vs Ground Truth:
-    • ARI: {sklearn_metrics['ARI']:.3f}
     • Time: {sklearn_metrics['time']:.3f}
     • V-Measure: {sklearn_metrics['V_Measure']:.3f}
     • Clusters Found: {sklearn_metrics['N_Clusters']}
     • Noise Points: {sklearn_metrics['N_Noise']}
-    • Homogeneity Points: {sklearn_metrics['Homogeneity']}
+    • Homogeneity: {sklearn_metrics['Homogeneity']}
     
     DBSCAN vs Ground Truth:
-    • ARI: {dbscan_metrics['ARI']:.3f}
     • Time: {dbscan_metrics['time']:.3f}
     • V-Measure: {dbscan_metrics['V_Measure']:.3f}
     • Clusters Found: {dbscan_metrics['N_Clusters']}
     • Noise Points: {dbscan_metrics['N_Noise']}
-    • Homogeneity Points: {dbscan_metrics['Homogeneity']}
+    • Homogeneity: {dbscan_metrics['Homogeneity']}
     """
     
     ax5.text(0.05, 0.95, metrics_text, transform=ax5.transAxes, 
-             fontsize=9, verticalalignment='top', fontfamily='monospace',
-             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray", alpha=0.8))
+             fontsize=9, verticalalignment='top', fontfamily='monospace')
     
     # Plot 6: Algorithm Agreement - NEW PLOT
     ax6 = axes[1, 2]
