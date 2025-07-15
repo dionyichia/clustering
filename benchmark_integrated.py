@@ -299,6 +299,32 @@ def track_performance(func, *args, **kwargs):
     
     return result, execution_time, memory_used
 
+def sort_csv_by_toa(data_path: str, toa_column: str = "TOA(ns)") -> None:
+    """
+    Loads a CSV, sorts it globally by TOA(ns), and writes it back to the same file.
+
+    Args:
+        data_path (str): Path to the input CSV file.
+        toa_column (str): Name of the column containing Time of Arrival in nanoseconds.
+    """
+    try:
+        print(f"Reading CSV from {data_path}...")
+        df = pd.read_csv(data_path)
+
+        if toa_column not in df.columns:
+            raise ValueError(f"Column '{toa_column}' not found in the CSV.")
+
+        print(f"Sorting by '{toa_column}'...")
+        df_sorted = df.sort_values(by=toa_column)
+
+        print("Writing sorted data back to CSV...")
+        df_sorted.to_csv(data_path, index=False)
+
+        print("✅ CSV successfully sorted and saved.")
+
+    except Exception as e:
+        print(f"❌ Error while sorting CSV: {e}")
+
 
 def batch_data(data_path: str, batch_interval: float = 2.0, 
                chunk_size: int = 10000, assume_sorted: bool = True) -> List[Dict[str, any]]:
@@ -323,6 +349,9 @@ def batch_data(data_path: str, batch_interval: float = 2.0,
     
     if not os.path.exists(data_path):
         raise FileNotFoundError(f"Data file not found at: {data_path}")
+
+    if not assume_sorted:
+        sort_csv_by_toa(data_path=data_path, toa_column='TOA(ns)')
     
     if batch_interval <= 0:
         batch_interval = 2.0
