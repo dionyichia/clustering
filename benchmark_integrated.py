@@ -540,7 +540,7 @@ def run_benchmark_with_visualization_batched(
         try:
             # Read data in a try-except block to handle memory issues
             df = pd.read_csv(csv_file)
-            log_memory_usage("after reading CSV")
+            # log_memory_usage("after reading CSV")
 
             # Try finding min points per emitter from all unique emitters in batch
             try: 
@@ -552,19 +552,24 @@ def run_benchmark_with_visualization_batched(
             if use_toa: feature_cols.append('TOA(ns)')
             
             X = df[feature_cols].to_numpy()
-            log_memory_usage("after creating feature matrix")
+            # log_memory_usage("after creating feature matrix")
             
             # Scale the data for DBSCAN
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            log_memory_usage("after scaling")
+            def scale_data_isolated(X):
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X)
+                # scaler goes out of scope automatically
+                return X_scaled
+ 
+            X_scaled = scale_data_isolated(X)
+            # log_memory_usage("after scaling")
 
             true_labels = df['EmitterId'].to_numpy()
             
             # Clear df early to free memory
             del df
             gc.collect()
-            log_memory_usage("after clearing DataFrame")
+            # log_memory_usage("after clearing DataFrame")
             
             # GPU HDBSCAN on the file directly
             print("  -> Running GPU HDBSCAN...")
@@ -604,6 +609,7 @@ def run_benchmark_with_visualization_batched(
             # Explicitly delete DBSCAN model and scaled data
             del dbscan_model
             del X_scaled
+
             gc.collect()
             log_memory_usage("after DBSCAN")
             
@@ -646,6 +652,7 @@ def run_benchmark_with_visualization_batched(
             # Clean up variables at the end of each batch
             del X, gpu_labels, sklearn_labels, dbscan_labels, true_labels
             del eval_results, result
+            gc.collect()
             gc.collect()
             
             log_memory_usage("end of batch")
@@ -926,9 +933,7 @@ def run_speed_to_samples_benchmark(data_path, executable_path="./gpu_hdbscan_edi
     
     # Get true labels if available
     true_labels = df[emitter_col].values if emitter_col in df.columns else None
-    
-    # Scale data for DBSCAN
-    scaler = StandardScaler()
+
 
     for num_samples in num_samples_for_benchmark:
         print(f"\nProcessing {num_samples} samples...")
@@ -945,6 +950,9 @@ def run_speed_to_samples_benchmark(data_path, executable_path="./gpu_hdbscan_edi
         except Exception as e:
             print(f"Error processing file: {e}")
             min_cluster_size = 20
+
+        # Scale data for DBSCAN
+        scaler = StandardScaler()
         
         # GPU HDBSCAN on the file directly
         print("  -> Running GPU HDBSCAN...")
