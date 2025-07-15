@@ -178,6 +178,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                                         const std::vector<int>& sz,
                                         int n_samples,
                                         int root_node,
+                                        int& next_label,
                                         int min_cluster_size) {
     
     std::vector<CondensedNode> condensed_tree;
@@ -187,9 +188,11 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
     // Get nodes in BFS order from root
     std::vector<int> node_list = bfs_from_node(root_node, left_child, right_child, n_samples);
     
-    // Initialize root relabeling
-    relabel[root_node] = n_samples;
-    int next_label = n_samples + 1;
+    // Initialize root relabeling with global counter
+    if (next_label == 0) {
+        next_label = n_samples;
+    }
+    relabel[root_node] = next_label++;
     
     std::cout << "[DEBUG] Starting condense tree with min_cluster_size: " << min_cluster_size << "\n";
     std::cout << "[DEBUG] Root node: " << root_node << ", relabeled to: " << relabel[root_node] << "\n";
@@ -617,14 +620,15 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Initialize combined condensed tree
     std::vector<CondensedNode> combined_condensed_tree;
-
+    // Global label counter to avoid collisions across multiple roots
+    static int next_label = 0;
     // Process each root cluster separately
     for(int root_node : root_clusters) {
         // Call condense_tree for this specific root
         std::cout << "[DEBUG] Root node for condensing: " << root_node << "\n";
         std::vector<CondensedNode> root_condensed_tree = condense_tree(
             left_child, right_child, birth_lambda, death_lambda, sz, 
-            N_pts, root_node, min_cluster_size
+            N_pts, root_node,next_label,min_cluster_size
         );
         
         // Append this root's condensed tree to the combined tree
