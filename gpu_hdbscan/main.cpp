@@ -402,17 +402,7 @@ int main(int argc, char** argv) {
   if (!quiet_mode) {
         printFirstNEdges(all_edges);
     }
-//   std::ofstream ofs("all_edges.txt");
-//   if(!ofs.is_open()) {
-// 	std::cerr << "Error:unable to open all_edges.txt for writing\n";
-//   } else{
-// 	ofs << "# u v weight\n";
-// 	for( auto const& e: all_edges) {
-// 		ofs << e.u << " " << e.v << " " << e.weight << "\n";
-// 	}
-// 	ofs.close();
-// 	std::cout<< "[DEBUG] Wrote " << all_edges.size() << "edges to all_edges.txt\n";
-//   }
+
   int numEdges = all_edges.size();
   ullong n_vertices = static_cast<ullong>(N);
   ullong n_edges = static_cast<ullong>(numEdges);
@@ -453,7 +443,6 @@ int main(int argc, char** argv) {
     int N_pts = points.size();
     DEBUG_PRINT( "[DEBUG] Number of points (N_pts): " << N_pts << "\n");
 
-   DEBUG_PRINT( "\n=== Running Single Linkage Clustering ===" << "\n");
     // Call the single linkage clustering function
     std::vector<std::vector<int>> clusters = single_linkage_clustering(
         mst_edges, 

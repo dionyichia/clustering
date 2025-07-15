@@ -83,39 +83,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
     clusterMethod clusterMethod = clusterMethod::EOM
 );
 
-__global__ void finalize_stability_kernel(
-    const int* parent,
-    const int* sz,
-    const float* birth_lambda,
-    const float* death_lambda,
-    float* stability,
-    int num_clusters,
-    float lambda_max,
-    float lambda_min,
-    int num_connected_components
-);
-
-void parallel_finalize_stability(
-    std::vector<int>& parent,
-    std::vector<int>& sz,
-    std::vector<float>& birth_lambda,
-    std::vector<float>& death_lambda,
-    std::vector<float>& stability,
-    float lambda_max,
-    float lambda_min,
-    int num_connected_components,
-    int next_cluster_id
-);
-
 const char* clusterMethodName(clusterMethod m);
-
-// Helper function to collect members (can be made internal if not needed elsewhere)
-void collect_members(int c,
-                     int N_pts,
-                     const std::vector<int>& left_child,
-                     const std::vector<int>& right_child,
-                     std::vector<int>& out);
-
 
 /**
  * Evaluate clustering results against ground truth labels
@@ -132,6 +100,5 @@ ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
  * Print clustering evaluation results
  */
 void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode = false);
-
 
 #endif // SINGLE_LINKAGE_HPP
