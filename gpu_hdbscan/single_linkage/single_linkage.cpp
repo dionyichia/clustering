@@ -244,24 +244,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
     // supposed to have 2N-1 clusters since there will be N-1 merges from N-1 edges
     std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
 
-    // check every cluster made
-    // start from first NON-singleton cluster (hence i = N_pts)
-    // end at next_cluster_id
-    // if size of cluster less than min_cluster_size
-    // update its stability to be the sum of its singleton points stabilities
-    for(int i = N_pts; i < next_cluster_id;i++){
-        if (sz[i] < min_cluster_size){
-            std::vector<int> tmp;
-            collect_members(i, N_pts,left_child, right_child, tmp);
-            stability[i] = 0;
-            for (int point : tmp){
-                stability[i] += stability[point];
-            }
-        }
-        else{
-            ;
-        }
-    }
     // ====== CONDENSE TREE ======
     // IDENTIFY ROOT CLUSTERS AND CONNECTED COMPONENTS
     std::vector<int> root_clusters;
@@ -280,31 +262,26 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     // Finalize singleton deaths
     std::cout << "\n=== FINALIZING STABILITY DEBUG ===" << std::endl;
-    // Fix the finalization - add stability for ALL nodes that died
     for(int c = 0; c < next_cluster_id; ++c){
         if(death_lambda[c] > 0) {  
             // Already processed during merging
             if(c < 20) {
                 std::cout << "Cluster " << c << " (merged): final stability=" << stability[c] << std::endl;
             }
-        } else if(parent[c] == c) {  // Root node - dies at lambda=0
+        } else if(parent[c] == c) {  // Root node - dies at lambda_min 
             if(num_connected_components == 1) {
-                // Single root = artificial merge point, stability = 0
-                // std::cout << "Single root cluster " << c << ": stability=0 (artificial merge)" << std::endl;
-                stability[c] = 0;
+                stability[c] = 0;  // Single component spanning whole dataset
             } else {
                 // Multiple roots = real connected components
-                float final_contribution = (lambda_max - lambda_min) * sz[c];
+                // std::cout << "Cluster " << c << " birth_lambda:" << birth_lambda[c] 
+                //         << " lambda_min:" << lambda_min << std::endl;
+                float final_contribution = (birth_lambda[c] - lambda_min) * sz[c];
                 stability[c] += final_contribution;
-                // std::cout << "Multi-root cluster " << c << ": adding final stability " << final_contribution 
-                //           << " -> total=" << stability[c] << std::endl;
             }
         } else {
             // Singleton that was never merged
-            float final_contribution = (birth_lambda[c] - lambda_min) * sz[c];  // CHANGED THIS LINE
+            float final_contribution = (birth_lambda[c] - lambda_min) * sz[c]; 
             stability[c] += final_contribution;
-            // std::cout << "Singleton " << c << ": adding final stability " << final_contribution 
-            //             << " -> total=" << stability[c] << std::endl;
         }
     }
     // parallel_finalize_stability(
@@ -316,7 +293,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
     //     lambda_max,
     //     lambda_min
     // );
-    
     std::vector<int> final_clusters;
 
     // ====== CLUSTER SELECTION ======
@@ -324,112 +300,134 @@ std::vector<std::vector<int>> single_linkage_clustering(
         case clusterMethod::EOM: {
         // === EXCESS OF MASS CLUSTER SELECTION===
 
-        // Dynamic Programming table
-        // Number Of Elements == Max Clusters
-        // Each Element Stores Total Stability of Selection and selected clusters
-        std::vector<ClusterChoice> dp(max_clusters);
-
-        std::cout << "\n=== STABILITY SUMMARY ===" << std::endl;
-        // for(int c = 0; c < next_cluster_id; ++c) {
-        //     if(sz[c] >= min_cluster_size) {
-        //         std::cout << "Cluster " << c << ": size=" << sz[c] 
-        //                     << ", birth_lambda=" << birth_lambda[c]
-        //                     << ", death_lambda=" << death_lambda[c]
-        //                     << ", stability=" << stability[c] << std::endl;
-        //     }
-        // }
-
         std::cout << "\n=== Computing Optimal Cluster Selection ===" << std::endl;
 
-        // Bottom-up DP: For each node, compute best selection in its subtree
-        for(int c = 0; c < next_cluster_id; ++c) {     
-
-            int L = left_child[c], R = right_child[c];
+        // Track which clusters are selected in the optimal solution
+        std::vector<bool> is_selected(max_clusters, false);
+        
+        // Bottom-up cluster selection: for each node, decide independently
+        std::function<void(int)> select_clusters = [&](int node) {
+            if(node < 0) return;
             
-            // if no children
+            int L = left_child[node], R = right_child[node];
+            
+            // if no children and sz[node] >= min_cluster_size
+            // select node
             if(L == -1 && R == -1) {
-                // Leaf node: only choice is to select self (no children)
-                dp[c] = ClusterChoice(stability[c], {c});
- //               std::cout << "[DEBUG] Leaf " << c << ": stability=" << stability[c] << std::endl;
-            } else {
-                // Internal node: compare choice of selecting self vs optimal descendants
-                ClusterChoice select_self(stability[c], {c});
-                ClusterChoice select_descendants(0.0f, {});
-                // Check children
-                // If they are larger than MCS 
-                // add stability to choice of descendants stability 
-                // add points to choice of descendants points
-                if(L >= 0 && sz[L] >= min_cluster_size) {
-                    select_descendants.total_stability += dp[L].total_stability;
-                    select_descendants.selected_clusters.insert(
-                        select_descendants.selected_clusters.end(),
-                        dp[L].selected_clusters.begin(),
-                        dp[L].selected_clusters.end()
-                    );
-                }
-                // If they are smaller than MCS
-                // add stability still
-                // don't add points to select_descendants points as they would be noise
-                else if(L >= 0 && sz[L] < min_cluster_size){
-                    select_descendants.total_stability += dp[L].total_stability;
-                }
-                if(R >= 0 && sz[R] >= min_cluster_size) {
-                    select_descendants.total_stability += dp[R].total_stability;
-                    select_descendants.selected_clusters.insert(
-                        select_descendants.selected_clusters.end(),
-                        dp[R].selected_clusters.begin(),
-                        dp[R].selected_clusters.end()
-                    );
-                }
-                else if(R >= 0 && sz[R] < min_cluster_size){
-                    select_descendants.total_stability += dp[R].total_stability;
-                }
-                // Choose the option with higher total stability
-                if(select_self.total_stability >= select_descendants.total_stability) {
-                    dp[c] = select_self;
+                if(sz[node] >= min_cluster_size) {
+                    is_selected[node] = true;
+                    std::cout << "[DEBUG] Leaf cluster " << node 
+                            << " selected (size=" << sz[node] 
+                            << ", stability=" << stability[node] << ")" << std::endl;
                 } else {
-                    dp[c] = select_descendants;
+                    std::cout << "[DEBUG] Leaf cluster " << node 
+                            << " too small (size=" << sz[node] 
+                            << "), will contribute to parent" << std::endl;
                 }
+                return;
+            }
+
+            // Leaf nodes: select if they meet minimum size, otherwise they contribute to parent
+            // Recursively solve left and right subtree of node
+            // This tells us which clusters are selected from left and right subtree
+            select_clusters(L);
+            select_clusters(R);
+            
+            // Calculate stability of optimal selection from children
+            float children_stability = 0.0f;
+            std::vector<int> children_to_unselect;
+            
+            // Helper function to collect stability from a subtree
+            std::function<float(int)> get_subtree_stability = [&](int subtree_root) -> float {
+                if(subtree_root < 0) return 0.0f;
+                
+                float total = 0.0f;
+                // if the subtree root is selected, its stability is higher than its children
+                // so children's stability not relevant 
+                if(is_selected[subtree_root]) {
+                    total += stability[subtree_root];
+                }
+                
+                // If this node wasn't selected, add its children's contributions
+                if(!is_selected[subtree_root]) {
+                    total += get_subtree_stability(left_child[subtree_root]);
+                    total += get_subtree_stability(right_child[subtree_root]);
+                }
+                
+                return total;
+            };
+            
+            // For each child, get the optimal stability from its subtree
+            if(L >= 0) {
+                children_stability += get_subtree_stability(L);
+            }
+            if(R >= 0) {
+                children_stability += get_subtree_stability(R);
+            }
+            
+            // Collect all nodes that would need to be unselected if we select this node
+            std::function<void(int)> collect_selected_nodes = [&](int subtree_root) {
+                if(subtree_root < 0) return;
+                if(is_selected[subtree_root]) {
+                    children_to_unselect.push_back(subtree_root);
+                } else {
+                    collect_selected_nodes(left_child[subtree_root]);
+                    collect_selected_nodes(right_child[subtree_root]);
+                }
+            };
+            
+            collect_selected_nodes(L);
+            collect_selected_nodes(R);
+            
+            // Compare: this node vs optimal children selection
+            if(sz[node] >= min_cluster_size && stability[node] > children_stability) {
+                // Unselect all descendants, select this node
+                for(int child : children_to_unselect) {
+                    is_selected[child] = false;
+                }
+                is_selected[node] = true;
+                
+                std::cout << "[DEBUG] Node " << node << " selected over descendants" 
+                        << " (node_stability=" << stability[node] 
+                        << " vs children_stability=" << children_stability << ")" << std::endl;
+            } else if(sz[node] >= min_cluster_size) {
+                std::cout << "[DEBUG] Node " << node << " NOT selected, keeping descendants" 
+                        << " (node_stability=" << stability[node] 
+                        << " vs children_stability=" << children_stability << ")" << std::endl;
+            } else {
+                std::cout << "[DEBUG] Node " << node << " too small (size=" << sz[node] 
+                        << "), stability will contribute to parent" << std::endl;
+            }
+        };
+
+        // Process all trees (handle multiple roots)
+        for(int c = 0; c < next_cluster_id; ++c) {
+            if(parent[c] == c) {  // Root node
+                std::cout << "[DEBUG] Processing tree rooted at " << c << std::endl;
+                select_clusters(c);
             }
         }
-
-        // Extract the globally optimal solution from root(s)
-        std::vector<bool> is_selected(max_clusters, false);
 
         std::cout << "\n=== Extracting Final Clusters ===" << std::endl;
         
-        // Find root node(s) and extract their optimal solutions
-        bool found_root = false;
+        // Build final clusters list from selected nodes
+        float total_selected_stability = 0.0f;
         for(int c = 0; c < next_cluster_id; ++c) {
-            if(parent[c] == c && sz[c] >= min_cluster_size) {
-                std::cout << "[DEBUG] Found root " << c << " with optimal stability=" 
-                        << dp[c].total_stability << " and " << dp[c].selected_clusters.size() 
-                        << " clusters" << std::endl;
-                
-                // Add all selected clusters from this root's optimal solution
-                for(int selected : dp[c].selected_clusters) {
-                    if(!is_selected[selected]) {
-                        is_selected[selected] = true;
-                        final_clusters.push_back(selected);
-                        std::cout << "[DEBUG] Selected cluster " << selected 
-                                << " (size=" << sz[selected] 
-                                << ", stability=" << stability[selected] << ")" << std::endl;
-                    }
-                }
+            if(is_selected[c]) {
+                final_clusters.push_back(c);
+                total_selected_stability += stability[c];
+                std::cout << "[DEBUG] Final cluster " << c 
+                        << " (size=" << sz[c] 
+                        << ", stability=" << stability[c] << ")" << std::endl;
             }
         }
+        
         // Final validation and statistics
         std::cout << "\n=== Final Results ===" << std::endl;
         std::cout << "Selected " << final_clusters.size() << " clusters" << std::endl;
-
-        float total_selected_stability = 0.0f;
-        for(int c : final_clusters) {
-            total_selected_stability += stability[c];
-        }
         std::cout << "Total stability: " << total_selected_stability << std::endl;
         break;
     }
-
     case clusterMethod::Leaf: {
         // === LEAF CLUSTER SELECTION ===
         final_clusters.reserve(N_pts);
@@ -488,7 +486,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
                     << " got " << clusters.back().size() << " points\n";
         }
     }
-
     return clusters;
 }
 
@@ -651,12 +648,14 @@ ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
             if (point_id >= 0 && point_id < total_points) {
                 pred_labels[point_id] = cluster_id;
             }
-            if (point_id == -1){
-                noise_points += 1;
-            }
         }
     }
 
+    for (int i: pred_labels){
+        if (i == -1){
+            noise_points += 1;
+        }
+    }
     // Basic statistics
     metrics.noise_points = noise_points;
     metrics.total_points = total_points;
