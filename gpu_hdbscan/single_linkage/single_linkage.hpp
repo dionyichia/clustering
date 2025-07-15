@@ -40,6 +40,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                                         const std::vector<int>& sz,
                                         int n_samples,
                                         int root_node,
+                                        int& next_label,
                                         int min_cluster_size = 10);
 
 std::map<int, ClusterStability> calculate_cluster_stability(
