@@ -4,6 +4,7 @@
 #include <vector>
 #include <iostream>
 #include <map>
+#include <set>
 #include "kd_tree/include/types.hpp"  // Include for Edge definition
 
 enum class clusterMethod{

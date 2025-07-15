@@ -293,9 +293,8 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
 
 
 // Calculate stability for each cluster (sum of lambda values for points falling out)
-std::map<int, ClusterStability> calculate_cluster_stability(
-    const std::vector<CondensedNode>& condensed_tree) {
-    
+std::map<int, ClusterStability> calculate_cluster_stability(const std::vector<CondensedNode>& condensed_tree) 
+{
     std::map<int, ClusterStability> cluster_stability;
     
     // Initialize all clusters
@@ -312,12 +311,11 @@ std::map<int, ClusterStability> calculate_cluster_stability(
         }
     }
     
-    // Calculate stability (sum of lambda values for points falling out)
+    // Calculate stability following the HDBSCAN paper more closely
     for (const auto& node : condensed_tree) {
-        if (node.cluster_size == 1) {
-            // Point falling out of cluster contributes to stability
-            cluster_stability[node.parent].stability += node.lambda_val;
-        }
+        // All edges in the condensed tree contribute to parent stability
+        // The contribution is lambda_val * cluster_size
+        cluster_stability[node.parent].stability += node.lambda_val * node.cluster_size;
     }
     
     return cluster_stability;
@@ -358,10 +356,10 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
     }
     std::sort(node_list.rbegin(), node_list.rend());
     
-    // Exclude root if it exists (sklearn behavior)
-    if (node_list.size() > 1) {
-        node_list.pop_back();
-    }
+    // // Exclude root if it exists (sklearn behavior)
+    // if (node_list.size() > 1) {
+    //     node_list.pop_back();
+    // }
     
     std::cout << "[DEBUG] EOM selection processing " << node_list.size() << " clusters\n";
     
@@ -600,15 +598,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
     // supposed to have 2N-1 clusters since there will be N-1 merges from N-1 edges
     std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
 
-    int root_node = next_cluster_id - 1;
-    std::cout << "[DEBUG] Root node for condensing: " << root_node << "\n";
-
-    // ====== CONDENSE TREE ======
-    std::vector<CondensedNode> condensed_tree = condense_tree(
-    left_child, right_child, birth_lambda, death_lambda, sz, 
-    N_pts, root_node, min_cluster_size
-    );
-
     // IDENTIFY ROOT CLUSTERS AND CONNECTED COMPONENTS
     std::vector<int> root_clusters;
     for(int c = 0; c < next_cluster_id; ++c) {
@@ -623,9 +612,31 @@ std::vector<std::vector<int>> single_linkage_clustering(
         std::cout << root << " ";
     }
     std::cout << std::endl;
+    
+    // ====== CONDENSE TREE FOR MULTIPLE ROOT NODES ======
+
+    // Initialize combined condensed tree
+    std::vector<CondensedNode> combined_condensed_tree;
+
+    // Process each root cluster separately
+    for(int root_node : root_clusters) {
+        // Call condense_tree for this specific root
+        std::cout << "[DEBUG] Root node for condensing: " << root_node << "\n";
+        std::vector<CondensedNode> root_condensed_tree = condense_tree(
+            left_child, right_child, birth_lambda, death_lambda, sz, 
+            N_pts, root_node, min_cluster_size
+        );
+        
+        // Append this root's condensed tree to the combined tree
+        combined_condensed_tree.insert(
+            combined_condensed_tree.end(), 
+            root_condensed_tree.begin(), 
+            root_condensed_tree.end()
+        );
+    }
     // ===== STABILITY CALCULATION (like SKLearn) ====
     // ====== CLUSTER EXTRACTION (EOM Algorithm like sklearn) ======
-    std::vector<std::vector<int>> final_clusters = extract_clusters_eom(condensed_tree, N_pts, min_cluster_size);
+    std::vector<std::vector<int>> final_clusters = extract_clusters_eom(combined_condensed_tree, N_pts);
 
     std::cout << "\n=== FINAL CLUSTERING RESULT ===" << std::endl;
     std::cout << "Found " << final_clusters.size() << " clusters:\n";
