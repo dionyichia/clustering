@@ -473,7 +473,7 @@ int main(int argc, char** argv) {
         DEBUG_PRINT("Ground truth size: " << ground_truth_labels.size() << ", Points size: " << N_pts << "\n");
     }
     // Output cluster labels for Python parsing
-    // outputClusterLabels(clusters, N_pts);
+    outputClusterLabels(clusters, N_pts);
 
     // Clean up
     if (result.mst) {

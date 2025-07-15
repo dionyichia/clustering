@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <iostream>
+#include <map>
 #include "kd_tree/include/types.hpp"  // Include for Edge definition
 
 enum class clusterMethod{
@@ -10,12 +11,53 @@ enum class clusterMethod{
     Leaf
 };
 
-// Add this structure to track noise during hierarchy building:
-struct NoiseInfo {
-    std::vector<int> noise_points;
-    std::vector<int> cluster_for_noise;  // which cluster each noise point joined
+struct CondensedNode {
+    int parent;
+    int child;
+    float lambda_val;
+    int cluster_size;
+    
+    CondensedNode(int p, int c, float l, int s) : parent(p), child(c), lambda_val(l), cluster_size(s) {}
 };
 
+struct ClusterStability {
+    float stability;
+    std::vector<int> children;
+    int cluster_size;
+    bool is_cluster;
+    
+    ClusterStability() : stability(0.0f), cluster_size(0), is_cluster(true) {}
+};
+
+std::vector<int> bfs_from_node(int start_node, const std::vector<int>& left_child, 
+                               const std::vector<int>& right_child, int n_samples);
+
+std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
+                                        const std::vector<int>& right_child,
+                                        const std::vector<float>& birth_lambda,
+                                        const std::vector<float>& death_lambda,
+                                        const std::vector<int>& sz,
+                                        int n_samples,
+                                        int root_node,
+                                        int min_cluster_size = 10);
+
+std::map<int, ClusterStability> calculate_cluster_stability(
+    const std::vector<CondensedNode>& condensed_tree);
+
+std::vector<int> bfs_descendants(int cluster_id, 
+                                const std::map<int, ClusterStability>& cluster_stability);
+
+std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_stability,
+                                      int max_cluster_size = INT_MAX);
+
+std::vector<std::vector<int>> extract_clusters_eom(const std::vector<CondensedNode>& condensed_tree, 
+                                                  int n_samples, 
+                                                  int max_cluster_size = INT_MAX);
+
+std::vector<std::vector<int>> do_labelling_with_clusters(
+    const std::vector<CondensedNode>& condensed_tree,
+    const std::set<int>& selected_clusters,
+    int n_samples);
 
 // Struct for Cluster Output Comparison 
 struct ClusterMetrics {
@@ -29,19 +71,6 @@ struct ClusterMetrics {
     int num_predicted_clusters;
     int num_true_clusters;
     int noise_points;
-};
-
-// Structure to hold cluster selection choices
-struct ClusterChoice {
-    float total_stability;
-    std::vector<int> selected_clusters;
-    
-    // default c-tor
-    ClusterChoice() : total_stability(0.0f) {}
-
-    // c-tor with arguments
-    ClusterChoice(float stab, std::vector<int> clusters) 
-        : total_stability(stab), selected_clusters(std::move(clusters)) {}
 };
 
 // Function to perform single linkage clustering
@@ -60,7 +89,8 @@ __global__ void finalize_stability_kernel(
     float* stability,
     int num_clusters,
     float lambda_max,
-    float lambda_min
+    float lambda_min,
+    int num_connected_components
 );
 
 void parallel_finalize_stability(
@@ -70,7 +100,9 @@ void parallel_finalize_stability(
     std::vector<float>& death_lambda,
     std::vector<float>& stability,
     float lambda_max,
-    float lambda_min
+    float lambda_min,
+    int num_connected_components,
+    int next_cluster_id
 );
 
 const char* clusterMethodName(clusterMethod m);
