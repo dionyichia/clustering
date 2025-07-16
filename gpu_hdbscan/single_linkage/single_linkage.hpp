@@ -44,7 +44,8 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                                         int min_cluster_size = 10);
 
 std::map<int, ClusterStability> calculate_cluster_stability(
-    const std::vector<CondensedNode>& condensed_tree);
+    const std::vector<CondensedNode>& condensed_tree
+    );
 
 std::vector<int> bfs_descendants(int cluster_id, 
                                 const std::map<int, ClusterStability>& cluster_stability);
@@ -52,9 +53,26 @@ std::vector<int> bfs_descendants(int cluster_id,
 std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_stability,
                                       int max_cluster_size = INT_MAX);
 
-std::vector<std::vector<int>> extract_clusters_eom(const std::vector<CondensedNode>& condensed_tree, 
-                                                  int n_samples, 
-                                                  int max_cluster_size = INT_MAX);
+std::set<int> leaf_selection(const std::vector<CondensedNode>& condensed_tree,
+                           double cluster_selection_epsilon = 0.0,
+                           bool allow_single_cluster = false);
+
+int traverse_upwards(const std::vector<CondensedNode>& cluster_tree,
+                    double cluster_selection_epsilon,
+                    int cluster_id,
+                    bool allow_single_cluster);
+
+std::set<int> epsilon_search(const std::set<int>& leaves,
+                           const std::vector<CondensedNode>& cluster_tree,
+                           double cluster_selection_epsilon,
+                           bool allow_single_cluster);
+
+int find_min_parent(const std::vector<CondensedNode>& condensed_tree);
+
+std::vector<int> bfs_from_cluster_tree(const std::vector<CondensedNode>& cluster_tree,
+                                      int root_cluster);
+
+std::set<int> get_cluster_tree_leaves(const std::vector<CondensedNode>& condensed_tree);
 
 std::vector<std::vector<int>> do_labelling_with_clusters(
     const std::vector<CondensedNode>& condensed_tree,

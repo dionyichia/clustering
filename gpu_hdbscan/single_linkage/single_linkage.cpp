@@ -50,6 +50,11 @@ std::vector<int> bfs_from_node(int start_node, const std::vector<int>& left_chil
     return result;
 }
 
+// Constructs Condensed Tree from Merge Hierarchy
+// In Merge Hierarchy, birth lambda of parent is death lambda of children (since merging from bottom up)
+// However in Condensed Tree, each Condensed Node stores the following info (parent,child,lambda,child_size)
+// It tells us "At lambda = λ, cluster [parent] broke into cluster [child] and its size is child_size(child_size ≥ min_cluster_size).”
+// CondensedNode will only store clusters >= min_cluster_size (valid clusters) or 1 (singleton clusters)
 std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                                         const std::vector<int>& right_child,
                                         const std::vector<float>& birth_lambda,
@@ -61,6 +66,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                                         int min_cluster_size) {
     
     std::vector<CondensedNode> condensed_tree;
+    // left_child.size() is arbitrary, can use size() of any array which has size == number of nodes
     std::vector<int> relabel(left_child.size(), -1);
     std::vector<bool> ignore(left_child.size(), false);
     
@@ -78,7 +84,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
     
     // Process nodes in BFS order
     for (int node : node_list) {
-        // Skip if already processed or if it's a leaf node
+        // Skip if already processed or if it's a singleton cluster 
         if (ignore[node] || node < n_samples) {
             continue;
         }
@@ -115,18 +121,22 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
         }
         // Case 2: Both children are too small
         else if (left_count < min_cluster_size && right_count < min_cluster_size) {
-            // Add all leaf nodes from both subtrees directly to parent
+            // Get all leaves in invalid cluster 
             auto left_leaves = bfs_from_node(left, left_child, right_child, n_samples);
             for (int leaf : left_leaves) {
-                if (leaf < n_samples) {  // Only actual sample points
+                // Check if its a valid singleton cluster
+                if (leaf < n_samples) {  
+                    // Track in Condensed Tree as points falling out of valid parent cluster as noise
                     condensed_tree.emplace_back(relabel[node], leaf, lambda_value, 1);
                 }
                 ignore[leaf] = true;
             }
-            
+            // Get all leaves in invalid cluster 
             auto right_leaves = bfs_from_node(right, left_child, right_child, n_samples);
             for (int leaf : right_leaves) {
-                if (leaf < n_samples) {  // Only actual sample points
+                // Check if its a valid singleton cluster
+                if (leaf < n_samples) {
+                    // Track in Condensed Tree as points falling out of a valid cluster as noise  
                     condensed_tree.emplace_back(relabel[node], leaf, lambda_value, 1);
                 }
                 ignore[leaf] = true;
@@ -134,15 +144,19 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
             
             std::cout << "[DEBUG] Both children too small - added leaf nodes directly\n";
         }
+        // if only one child is big enough, don't make a new cluster
+        // it would just be the parent cluster shrinking into a smaller cluster 
         // Case 3: Left child too small, right child large enough
         else if (left_count < min_cluster_size) {
             // Right child inherits parent's label
             relabel[right] = relabel[node];
             
-            // Add all leaf nodes from left subtree
+            // Get all leaves in invalid cluster 
             auto left_leaves = bfs_from_node(left, left_child, right_child, n_samples);
             for (int leaf : left_leaves) {
-                if (leaf < n_samples) {  // Only actual sample points
+                // Check if its a valid singleton cluster
+                if (leaf < n_samples) { 
+                    // Track in Condensed Tree as points falling out of a valid cluster as noise  
                     condensed_tree.emplace_back(relabel[node], leaf, lambda_value, 1);
                 }
                 ignore[leaf] = true;
@@ -155,10 +169,12 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
             // Left child inherits parent's label
             relabel[left] = relabel[node];
             
-            // Add all leaf nodes from right subtree
+            // Get all leaves in invalid cluster 
             auto right_leaves = bfs_from_node(right, left_child, right_child, n_samples);
             for (int leaf : right_leaves) {
-                if (leaf < n_samples) {  // Only actual sample points
+                // Check if its a valid singleton cluster
+                if (leaf < n_samples) {
+                    // Track in Condensed Tree as points falling out of a valid cluster as noise   
                     condensed_tree.emplace_back(relabel[node], leaf, lambda_value, 1);
                 }
                 ignore[leaf] = true;
@@ -174,7 +190,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
 }
 
 
-// Calculate stability for each cluster (sum of lambda values for points falling out)
+// Calculate stability for each cluster 
 std::map<int, ClusterStability> calculate_cluster_stability(const std::vector<CondensedNode>& condensed_tree) 
 {
     // Dictionary storing clusters as {ClusterID, ClusterStability}
@@ -186,20 +202,22 @@ std::map<int, ClusterStability> calculate_cluster_stability(const std::vector<Co
         if (cluster_stability.find(node.parent) == cluster_stability.end()) {
             cluster_stability[node.parent] = ClusterStability();
         }
-        // if cluster is bigger than 1, it is a valid subcluster, add child to dictionary
+        // if cluster is bigger than 1, it is a valid subcluster 
+        // condensed tree only stores singleton cluster or clusters with size >= min_cluster_size
         if (node.cluster_size > 1) {
+            // if child cluster is not in dictionary, add it
             if (cluster_stability.find(node.child) == cluster_stability.end()) {
                 cluster_stability[node.child] = ClusterStability();
             }
             cluster_stability[node.parent].children.push_back(node.child);
             cluster_stability[node.child].cluster_size = node.cluster_size;
         }
-        // if cluster size is 1, it is a point falling out of the cluster 
+        // else if cluster size is 1, it is a point falling out of the cluster 
     }
     
-    // Calculate stability 
+    // Calculate stability of parent clusters
     for (const auto& node : condensed_tree) {
-        // All edges in the condensed tree contribute to parent stability
+        // All nodes in the condensed tree contribute to parent stability
         // The contribution is lambda_val * cluster_size
         cluster_stability[node.parent].stability += node.lambda_val * node.cluster_size;
     }
@@ -242,11 +260,6 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
     }
     std::sort(node_list.rbegin(), node_list.rend());
     
-    // // Exclude root if it exists (sklearn behavior)
-    // if (node_list.size() > 1) {
-    //     node_list.pop_back();
-    // }
-    
     std::cout << "[DEBUG] EOM selection processing " << node_list.size() << " clusters\n";
     
     // Apply Excess of Mass algorithm
@@ -262,7 +275,7 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
                   << subtree_stability << ", size=" << cluster_stability[node].cluster_size << "\n";
         
         // EOM decision: keep cluster if its stability > sum of children's stability
-        // Also check cluster size constraint
+        // Check parent cluster doesn't exceed max_cluster_size
         if (subtree_stability > cluster_stability[node].stability || 
             cluster_stability[node].cluster_size > max_cluster_size) {
             
@@ -297,6 +310,214 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
     return selected_clusters;
 }
 
+// Function to get leaf nodes from the cluster tree
+std::set<int> get_cluster_tree_leaves(const std::vector<CondensedNode>& condensed_tree) {
+    std::set<int> all_parents;
+    std::set<int> all_children;
+    
+    // Collect all parent and child cluster IDs
+    for (const auto& node : condensed_tree) {
+        if (node.cluster_size > 1) {  // Only consider cluster nodes, not point nodes
+            all_parents.insert(node.parent);
+            all_children.insert(node.child);
+        }
+    }
+    
+    // Leaves are children that are not parents
+    std::set<int> leaves;
+    for (int child : all_children) {
+        if (all_parents.find(child) == all_parents.end()) {
+            leaves.insert(child);
+        }
+    }
+    
+    return leaves;
+}
+
+// Function to find minimum parent ID (root cluster)
+int find_min_parent(const std::vector<CondensedNode>& condensed_tree) {
+    int min_parent = std::numeric_limits<int>::max();
+    for (const auto& node : condensed_tree) {
+        if (node.cluster_size > 1) {  // Only consider cluster nodes
+            min_parent = std::min(min_parent, node.parent);
+        }
+    }
+    return min_parent;
+}
+
+// Helper function to traverse upwards in the cluster tree
+int traverse_upwards(const std::vector<CondensedNode>& cluster_tree,
+                    double cluster_selection_epsilon,
+                    int cluster_id,
+                    bool allow_single_cluster) {
+    int current_cluster = cluster_id;
+    
+    while (true) {
+        // Find the parent of the current cluster
+        int parent = -1;
+        for (const auto& node : cluster_tree) {
+            if (node.child == current_cluster) {
+                parent = node.parent;
+                break;
+            }
+        }
+        
+        // If no parent found, we've reached the root
+        if (parent == -1) {
+            return current_cluster;
+        }
+        
+        // Find the birth epsilon (1/value) of the parent
+        double parent_birth_epsilon = 0.0;
+        for (const auto& node : cluster_tree) {
+            if (node.child == parent) {
+                parent_birth_epsilon = 1.0 / node.lambda_val;
+                break;
+            }
+        }
+        
+        // If parent has sufficient epsilon, return it
+        if (parent_birth_epsilon >= cluster_selection_epsilon) {
+            return parent;
+        }
+        
+        // Continue traversing upwards
+        current_cluster = parent;
+    }
+}
+
+// Helper function to perform BFS from a cluster to find all descendant nodes
+std::vector<int> bfs_from_cluster_tree(const std::vector<CondensedNode>& cluster_tree,
+                                      int root_cluster) {
+    std::vector<int> result;
+    std::queue<int> queue;
+    std::set<int> visited;
+    
+    queue.push(root_cluster);
+    visited.insert(root_cluster);
+    
+    while (!queue.empty()) {
+        int current = queue.front();
+        queue.pop();
+        result.push_back(current);
+        
+        // Find all children of current cluster
+        for (const auto& node : cluster_tree) {
+            if (node.parent == current && visited.find(node.child) == visited.end()) {
+                queue.push(node.child);
+                visited.insert(node.child);
+            }
+        }
+    }
+    
+    return result;
+}
+
+
+// Main epsilon search function
+std::set<int> epsilon_search(const std::set<int>& leaves,
+                           const std::vector<CondensedNode>& cluster_tree,
+                           double cluster_selection_epsilon,
+                           bool allow_single_cluster) {
+    std::vector<int> selected_clusters;
+    std::set<int> processed;
+    
+    for (int leaf : leaves) {
+        // Skip if already processed
+        if (processed.find(leaf) != processed.end()) {
+            continue;
+        }
+        
+        // Find the birth epsilon (1/value) for this leaf
+        double eps = 0.0;
+        bool found = false;
+        
+        for (const auto& node : cluster_tree) {
+            if (node.child == leaf) {
+                eps = 1.0 / node.lambda_val;
+                found = true;
+                break;
+            }
+        }
+        
+        // If we couldn't find the leaf in the tree, skip it
+        if (!found) {
+            continue;
+        }
+        
+        // Check if epsilon is below threshold
+        if (eps < cluster_selection_epsilon) {
+            // Need to traverse upwards to find a suitable parent
+            int epsilon_child = traverse_upwards(
+                cluster_tree,
+                cluster_selection_epsilon,
+                leaf,
+                allow_single_cluster
+            );
+            
+            selected_clusters.push_back(epsilon_child);
+            
+            // Mark all descendant nodes as processed
+            std::vector<int> descendants = bfs_from_cluster_tree(cluster_tree, epsilon_child);
+            for (int sub_node : descendants) {
+                if (sub_node != epsilon_child) {
+                    processed.insert(sub_node);
+                }
+            }
+        } else {
+            // Epsilon is sufficient, keep this leaf
+            selected_clusters.push_back(leaf);
+        }
+    }
+    
+    // Convert vector to set and return
+    return std::set<int>(selected_clusters.begin(), selected_clusters.end());
+}
+
+// Leaf selection function for the pipeline
+std::set<int> leaf_selection(const std::vector<CondensedNode>& condensed_tree,
+                           double cluster_selection_epsilon,
+                           bool allow_single_cluster) {
+    
+    // Step 1: Get leaf nodes from cluster tree
+    // Leaf Nodes are nodes that aren't parents, so formed from merge of two invalid clusters
+    // Can be >= min_cluster_size
+    std::set<int> leaves = get_cluster_tree_leaves(condensed_tree);
+    
+    std::cout << "Found " << leaves.size() << " leaf clusters: ";
+    for (int leaf : leaves) {
+        std::cout << leaf << " ";
+    }
+    std::cout << std::endl;
+    
+    // Step 2: Handle case when no leaves found
+    std::set<int> selected_clusters;
+    if (leaves.empty()) {
+        std::cout << "No leaves found, selecting root cluster" << std::endl;
+        int root_cluster = find_min_parent(condensed_tree);
+        selected_clusters.insert(root_cluster);
+    } else {
+        // Step 3: Apply epsilon search if specified
+        // Epsilon Search reduces fragmentation
+        // By setting a non-zero cluster_selection_epsilon, 
+        // clusters which are spawned at an epsilon < cluster_selection_epsilon are merged
+        // Until a parent cluster is found with epsilon >= cluster_selection_epsilon
+        if (cluster_selection_epsilon != 0.0) {
+            std::cout << "Applying epsilon search with epsilon = " << cluster_selection_epsilon << std::endl;
+            selected_clusters = epsilon_search(leaves, condensed_tree, cluster_selection_epsilon, allow_single_cluster);
+        } else {
+            selected_clusters = leaves;
+        }
+    }
+    
+    std::cout << "Selected clusters: ";
+    for (int cluster : selected_clusters) {
+        std::cout << cluster << " ";
+    }
+    std::cout << std::endl;
+    
+    return selected_clusters;
+}
 
 // Assign labels to points based on selected clusters and return cluster membership
 std::vector<std::vector<int>> do_labelling_with_clusters(
@@ -362,21 +583,8 @@ std::vector<std::vector<int>> do_labelling_with_clusters(
     return clusters;
 }
 
-std::vector<std::vector<int>> extract_clusters_eom(const std::vector<CondensedNode>& condensed_tree, 
-                                                  int n_samples, 
-                                                  int max_cluster_size) {
-    
-    // Step 1: Calculate stability for each cluster
-    auto cluster_stability = calculate_cluster_stability(condensed_tree);
-    
-    // Step 2: Apply Excess of Mass selection
-    auto selected_clusters = excess_of_mass_selection(cluster_stability, max_cluster_size);
-    
-    // Step 3: Assign labels and return clusters
-    auto clusters = do_labelling_with_clusters(condensed_tree, selected_clusters, n_samples);
-    
-    return clusters;
-}
+
+
 
 std::vector<std::vector<int>> single_linkage_clustering(
     const std::vector<Edge>& mst_edges,
@@ -405,7 +613,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
     int max_clusters = 2 * N_pts;
     std::vector<int> parent(max_clusters), sz(max_clusters);
-    std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters), stability(max_clusters);
+    std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters);
     std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
     
     // Guard against zero-length edges
@@ -430,7 +638,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
         sz[i] = 1;
         birth_lambda[i] = lambda_max;
         death_lambda[i] = 0;
-        stability[i] = 0;
     }
     int next_cluster_id = N_pts;
 
@@ -459,23 +666,17 @@ std::vector<std::vector<int>> single_linkage_clustering(
 
         // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
         float lambda = 1.f / e.weight;
-    
-        // Calculate stability contributions before merging
-        float stability_c1 = (birth_lambda[c1] - lambda) * sz[c1];
-        float stability_c2 = (birth_lambda[c2] - lambda) * sz[c2];
-        
+            
         // Set death lambda and record stability
         death_lambda[c1] = lambda;
         death_lambda[c2] = lambda;
-        stability[c1] += stability_c1;
-        stability[c2] += stability_c2;
+
         // make new cluster
         int c_new = next_cluster_id++;
         parent[c1] = parent[c2] = c_new;
         parent[c_new] = c_new;
         sz[c_new]           = sz[c1] + sz[c2];
         birth_lambda[c_new] = lambda;
-        stability[c_new]    = 0;
         death_lambda[c_new] = 0;
         left_child[c_new]   = c1;
         right_child[c_new]  = c2;
@@ -525,9 +726,27 @@ std::vector<std::vector<int>> single_linkage_clustering(
         );
     }
     // ====== STABILITY CALCULATION & CLUSTER EXTRACTION ======
-    std::cout << "\n=== STABILITY CALCULATION & CLUSTER EXTRACTION STEP ===" << std::endl;
-    std::vector<std::vector<int>> final_clusters = extract_clusters_eom(combined_condensed_tree, N_pts);
-
+    std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
+    auto cluster_stability = calculate_cluster_stability(combined_condensed_tree);
+    std::cout << "=== CLUSTER EXTRACTION STEP ===" << std::endl;
+    std::set<int> selected_clusters;
+    switch(clusterMethod){
+        case clusterMethod::EOM:
+            std::cout << "=== CLUSTER METHOD SELECTED: EXCESS OF MASS ===" << std::endl;
+            selected_clusters = excess_of_mass_selection(cluster_stability);
+            break;
+        case clusterMethod::Leaf:
+            std::cout << "=== CLUSTER METHOD SELECTED: LEAF ===" << std::endl;
+            selected_clusters = leaf_selection(combined_condensed_tree);
+            break;
+        default:
+            std::cout << "=== NO VALID CLUSTER METHOD SELECTED ===" << std::endl;
+            std::vector<std::vector<int>> fail;
+            return fail;
+    }
+    
+    std::cout << "=== LABELLING CLUSTERS STEP ===" << std::endl;
+    std::vector<std::vector<int>> final_clusters = do_labelling_with_clusters(combined_condensed_tree, selected_clusters, N_pts);
     std::cout << "\n=== FINAL CLUSTERING RESULT ===" << std::endl;
     std::cout << "Found " << final_clusters.size() << " clusters:\n";
     for (int i = 0; i < final_clusters.size(); ++i) {
