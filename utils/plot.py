@@ -3,6 +3,7 @@ matplotlib.use('Agg')  # Use non-GUI backend suitable for headless environments
 import matplotlib.pyplot as plt
 import os 
 import numpy as np
+import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
@@ -70,33 +71,54 @@ def create_comprehensive_clustering_plot(
     # Plot 5: Metrics Summary - UPDATED
     ax5 = axes[1, 1]
     ax5.axis('off')
+
+    start = pd.to_datetime(gt_stats['start_time'], unit='ns')
+    end = pd.to_datetime(gt_stats['end_time'], unit='ns')
+    interval = end - start
     
     # Create metrics table - UPDATED TO INCLUDE DBSCAN
     metrics_text = f"""
     Dataset Statistics:
+    • Batch Interval ({interval}): {start} - {end}
     • Samples: {gt_stats['N_Samples']:,}
     • True Clusters: {gt_stats['N_True_Clusters']}
     
     GPU HDBSCAN vs Ground Truth:
     • Time: {gpu_metrics['time']:.3f}
-    • V-Measure: {gpu_metrics['V_Measure']:.3f}
+    • Memory: {gpu_metrics['mem']:.3f}
     • Clusters Found: {gpu_metrics['N_Clusters']}
     • Noise Points: {gpu_metrics['N_Noise']}
+    • Num Pure Clusters: {gpu_metrics['purity']['n_pure_clusters']:.3f}
+    • Num Impure Clusters: {gpu_metrics['purity']['n_impure_clusters']:.3f}
+    • Num Noise Clusters: {gpu_metrics['purity']['n_noise_clusters']:.3f}
+    • Purity Ratio (Pure / Total): {gpu_metrics['purity']['purity_ratio']:.3f}
     • Homogeneity: {gpu_metrics['Homogeneity']}
-    
+    • V-Measure: {gpu_metrics['V_Measure']:.3f}
+
     Sklearn HDBSCAN vs Ground Truth:
     • Time: {sklearn_metrics['time']:.3f}
-    • V-Measure: {sklearn_metrics['V_Measure']:.3f}
+    • Memory: {sklearn_metrics['mem']:.3f}
     • Clusters Found: {sklearn_metrics['N_Clusters']}
     • Noise Points: {sklearn_metrics['N_Noise']}
+    • Num Pure Clusters: {sklearn_metrics['purity']['n_pure_clusters']:.3f}
+    • Num Impure Clusters: {sklearn_metrics['purity']['n_impure_clusters']:.3f}
+    • Num Noise Clusters: {sklearn_metrics['purity']['n_noise_clusters']:.3f}
+    • Purity Ratio (Pure / Total): {sklearn_metrics['purity']['purity_ratio']:.3f}
     • Homogeneity: {sklearn_metrics['Homogeneity']}
+    • V-Measure: {sklearn_metrics['V_Measure']:.3f}
     
     DBSCAN vs Ground Truth:
     • Time: {dbscan_metrics['time']:.3f}
-    • V-Measure: {dbscan_metrics['V_Measure']:.3f}
+    • Memory: {dbscan_metrics['mem']:.3f}
     • Clusters Found: {dbscan_metrics['N_Clusters']}
     • Noise Points: {dbscan_metrics['N_Noise']}
+    • Num Pure Clusters: {dbscan_metrics['purity']['n_pure_clusters']:.3f}
+    • Num Impure Clusters: {dbscan_metrics['purity']['n_impure_clusters']:.3f}
+    • Num Noise Clusters: {dbscan_metrics['purity']['n_noise_clusters']:.3f}
+    • Purity Ratio (Pure / Total): {dbscan_metrics['purity']['purity_ratio']:.3f}
     • Homogeneity: {dbscan_metrics['Homogeneity']}
+    • V-Measure: {dbscan_metrics['V_Measure']:.3f}
+
     """
     
     ax5.text(0.05, 0.95, metrics_text, transform=ax5.transAxes, 

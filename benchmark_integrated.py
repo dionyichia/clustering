@@ -550,6 +550,9 @@ def run_benchmark_with_visualization_batched(
 
             if use_amp: feature_cols.append('Amp_S0(dBm)')
             if use_toa: feature_cols.append('TOA(ns)')
+
+            start_time = df['TOA(ns)'].min()
+            end_time = df['TOA(ns)'].max()
             
             X = df[feature_cols].to_numpy()
             # log_memory_usage("after creating feature matrix")
@@ -616,8 +619,10 @@ def run_benchmark_with_visualization_batched(
             # Evaluate clustering results with ground truth
             print("  -> Evaluating clustering results...")
             eval_results = evaluate_clustering_with_ground_truth(
-                X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
-                batch_name, feature_cols, gpu_time, sklearn_time, dbscan_time, output_dir
+                X=X, gpu_labels=gpu_labels, sklearn_labels=sklearn_labels, dbscan_labels=dbscan_labels, true_labels=true_labels,
+                batch_name=batch_name, start_time=start_time, end_time=end_time, feature_names=feature_cols, 
+                gpu_time=gpu_time, sklearn_time=sklearn_time, dbscan_time=dbscan_time, 
+                gpu_mem=gpu_mem, sklearn_mem=sklearn_memory, dbscan_mem=dbscan_memory, save_dir=output_dir
             )
             evaluation_results.append(eval_results)
             
@@ -698,150 +703,6 @@ def force_memory_cleanup():
     """Force aggressive memory cleanup"""
     gc.collect()
     gc.collect() 
-
-def run_benchmark_with_visualization(data_path=None, executable_path=None, use_amp=False, use_toa=False):
-    """Enhanced benchmark function with cluster visualization"""
-    # Define output folder
-    output_dir = "benchmark_outputs"
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Initialize algorithms
-    gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
-    
-    # Test parameters
-    min_samples = 3
-    min_cluster_size = 50
-    quiet_mode = True
-    batch_interval = 2.0 # Interval used in batching
-    
-    # Results storage
-    results = []
-    
-    # Test datasets
-    if not data_path:
-        print("Data file not found, generating data...")
-
-        data = [
-            {
-                'name': 'blobs_100k',
-                'type': 'blobs',
-                'data_path': None,
-                'sample_size': 100000,
-            },
-            {
-                'name': 'anisotropic_100k', 
-                'type': 'anisotropic',
-                'data_path': None,
-                'sample_size': 1000000,
-            }
-        ]
-
-    else:
-        print("Data file found")
-        
-    for dataset in data:
-        data_type = dataset.get('type')
-        n_samples = dataset.get('sample_size')
-
-        print(f"\nTesting {dataset.get('name')} dataset with {n_samples} samples...")
-        
-        # If no data provided, generate data
-        if data_path is None:
-            X, true_labels = generate_test_data(data_type, n_samples)
-        else:
-            df = pd.read_csv(dataset.get('data_path'))  
-            feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
-
-            if use_amp:
-                feature_cols.append('Amp_S0(dBm)')
-            if use_toa:
-                feature_cols.append('TOA(ns)')
-
-            X = df[feature_cols].to_numpy()
-            true_labels = df['EmitterId'].to_numpy()
-        
-        feature_names = feature_cols if data_path is not None else ['Feature 1', 'Feature 2']
-        
-        # Test GPU HDBSCAN
-        print("Running GPU HDBSCAN...")
-        try:
-            gpu_labels, gpu_time, gpu_memory = track_performance(
-                gpu_hdbscan.fit_predict, X, min_samples, min_cluster_size, quiet_mode=quiet_mode
-            )
-            gpu_success = True
-            
-            # VISUALIZE CLUSTERS - This is the new part!
-            if gpu_success and len(np.unique(gpu_labels)) > 1:
-                print("Creating cluster visualizations...")
-                
-                # Basic 2D plot
-                plot_clusters_2d(X, gpu_labels, 
-                                feature_names=['Feature 1', 'Feature 2'],
-                                title=f"GPU HDBSCAN: {data_type} dataset ({n_samples} samples)",
-                                save_path=os.path.join(output_dir, f"gpu_clusters_{data_type}_{n_samples}.png"))
-                
-                # Comprehensive analysis
-                analysis_results = comprehensive_cluster_analysis(
-                    X, gpu_labels, 
-                    feature_names=['Feature 1', 'Feature 2'],
-                    save_prefix=os.path.join(output_dir, f"gpu_analysis_{data_type}_{n_samples}")
-                )
-                
-                print(f"Cluster analysis saved with prefix: gpu_analysis_{data_type}_{n_samples}")
-            
-        except Exception as e:
-            print(f"GPU HDBSCAN failed: {e}")
-            gpu_labels, gpu_time, gpu_memory = np.array([]), float('inf'), 0
-            gpu_success = False
-        
-        # Test sklearn HDBSCAN
-        print("Running sklearn HDBSCAN...")
-        sklearn_hdbscan = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
-        sklearn_labels, sklearn_time, sklearn_memory = track_performance(
-            sklearn_hdbscan.fit_predict, X
-        )
-        
-        # Visualize sklearn results too for comparison
-        if len(np.unique(sklearn_labels)) > 1:
-            plot_clusters_2d(X, sklearn_labels, 
-                            feature_names=['Feature 1', 'Feature 2'],
-                            title=f"Sklearn HDBSCAN: {data_type} dataset ({n_samples} samples)",
-                            save_path=os.path.join(output_dir, f"sklearn_clusters_{data_type}_{n_samples}.png"))
-        
-        # Store results (same as before)
-        result = {
-            'Dataset': data_type,
-            'Samples': n_samples,
-            'GPU_Time': gpu_time,
-            'Sklearn_Time': sklearn_time,
-            'GPU_Memory': gpu_memory,
-            'Sklearn_Memory': sklearn_memory,
-            'GPU_Success': gpu_success,
-            'GPU_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0) if gpu_success else 0,
-            'Sklearn_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
-        }
-        
-        if gpu_success and sklearn_time > 0:
-            result['Speedup_vs_Sklearn'] = sklearn_time / gpu_time
-        else:
-            result['Speedup_vs_Sklearn'] = 0
-        
-        results.append(result)
-
-    # Create results DataFrame and save
-    results_df = pd.DataFrame(results)
-    results_df.to_csv(os.path.join(output_dir, 'gpu_hdbscan_benchmark_results.csv'), index=False)
-    
-    # Print summary
-    print("\n" + "="*60)
-    print("BENCHMARK SUMMARY")
-    print("="*60)
-    print(results_df.to_string(index=False))
-    
-    # Plot results
-    # plot_benchmark_results(results_df)
-    
-    return df
 
 def timeout_handler(func, args, kwargs, timeout_duration):
     """Run function with timeout"""
@@ -1050,7 +911,6 @@ if __name__ == "__main__":
 
     # Make sure data file path exists
     data_path = "./data/pdwInterns_with_latlng.csv"
-    data_path = "./data/pdwInterns"
     
     batch_path = "./data/batch_data"
     batch_interval = 2 # TOA Interval in seconds
@@ -1072,13 +932,13 @@ if __name__ == "__main__":
     else:
         # if data path provided will use data file else will generate 2d data.
         if use_lat_lng:
-            noisy_data_path = "./data/noisy_pdwInterns_with_latlng.csv"
+            noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
 
             std_array = [1.0, 0.00021, 0.2, 0.2, 0.1, 0.1] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
         else:
-            noisy_data_path = "./data/noisy_pdwInterns.csv"
+            noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
 
             std_array = [1.0, 0.00021, 0.2, 0.2] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]

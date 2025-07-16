@@ -1,4 +1,3 @@
-import numpy as np
 from sklearn.metrics import (
     adjusted_rand_score, 
     normalized_mutual_info_score,
@@ -6,7 +5,6 @@ from sklearn.metrics import (
     completeness_score,
     v_measure_score
 )
-import pandas as pd
 from typing import Dict, Any
 
 from utils.plot import *
@@ -76,6 +74,77 @@ def comprehensive_cluster_analysis(X, labels, feature_names=None, save_prefix="c
     
     return results
 
+def evaluate_cluster_purity(predicted_labels: np.ndarray, true_labels: np.ndarray) -> Dict[str, Any]:
+    """
+    Evaluate cluster purity by counting pure and impure clusters.
+    
+    Parameters:
+    -----------
+    predicted_labels : array-like, shape (n_samples,)
+        Cluster labels from the algorithm being evaluated
+    true_labels : array-like, shape (n_samples,)
+        Ground truth emitter IDs
+        
+    Returns:
+    --------
+    dict : Dictionary containing purity metrics
+        - n_pure_clusters: Number of clusters with points from single emitter
+        - n_impure_clusters: Number of clusters with points from multiple emitters
+        - n_noise_clusters: Number of clusters made entirely of noise points
+        - total_clusters: Total number of clusters (excluding noise label -1)
+        - purity_ratio: Ratio of pure clusters to total clusters
+        - cluster_details: List of details for each cluster
+    """
+    
+    # Get unique cluster labels (excluding noise label -1)
+    unique_clusters = set(predicted_labels)
+    if -1 in unique_clusters:
+        unique_clusters.remove(-1)
+    
+    pure_clusters = 0
+    impure_clusters = 0
+    noise_clusters = 0
+    # cluster_details = []
+    
+    for cluster_id in unique_clusters:
+        # Get indices of points in this cluster
+        cluster_mask = predicted_labels == cluster_id
+        cluster_true_labels = true_labels[cluster_mask]
+        
+        # Get unique emitters in this cluster
+        unique_emitters = set(cluster_true_labels)
+        
+        # Check if cluster contains only noise points (assuming -1 represents noise in ground truth too)
+        if len(unique_emitters) == 1 and -1 in unique_emitters:
+            noise_clusters += 1
+            # cluster_type = "noise"
+        elif len(unique_emitters) == 1:
+            pure_clusters += 1
+            # cluster_type = "pure"
+        else:
+            impure_clusters += 1
+            # cluster_type = "impure"
+        
+        # Store cluster details
+        # cluster_details.append({
+        #     'cluster_id': cluster_id,
+        #     'cluster_type': cluster_type,
+        #     'n_points': np.sum(cluster_mask),
+        #     'n_unique_emitters': len(unique_emitters),
+        #     'emitters': list(unique_emitters)
+        # })
+    
+    total_clusters = len(unique_clusters)
+    purity_ratio = pure_clusters / total_clusters if total_clusters > 0 else 0
+    
+    return {
+        'n_pure_clusters': pure_clusters,
+        'n_impure_clusters': impure_clusters,
+        'n_noise_clusters': noise_clusters,
+        'total_clusters': total_clusters,
+        'purity_ratio': purity_ratio,
+    }
+
 def evaluate_clustering_with_ground_truth(
     X: np.ndarray,
     gpu_labels: np.ndarray,
@@ -83,10 +152,15 @@ def evaluate_clustering_with_ground_truth(
     dbscan_labels: np.ndarray,  # NEW PARAMETER
     true_labels: np.ndarray,
     batch_name: str,
+    start_time,
+    end_time, 
     feature_names: list,
     gpu_time,
     sklearn_time,
     dbscan_time,
+    gpu_mem,
+    sklearn_mem,
+    dbscan_mem,
     save_dir: str = "benchmark_outputs"
 
 ) -> Dict[str, Any]:
@@ -129,7 +203,9 @@ def evaluate_clustering_with_ground_truth(
         'V_Measure': v_measure_score(true_labels, gpu_labels),
         'N_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0),
         'N_Noise': np.sum(gpu_labels == -1),
-        'time': gpu_time
+        'purity': evaluate_cluster_purity(gpu_labels, true_labels),
+        'time': gpu_time,
+        'mem': gpu_mem
     }
     
     sklearn_metrics = {
@@ -140,7 +216,9 @@ def evaluate_clustering_with_ground_truth(
         'V_Measure': v_measure_score(true_labels, sklearn_labels),
         'N_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
         'N_Noise': np.sum(sklearn_labels == -1),
-        'time': sklearn_time
+        'purity': evaluate_cluster_purity(sklearn_labels, true_labels),
+        'time': sklearn_time,
+        'mem': sklearn_mem
     }
     
     # NEW: DBSCAN metrics
@@ -152,7 +230,9 @@ def evaluate_clustering_with_ground_truth(
         'V_Measure': v_measure_score(true_labels, dbscan_labels),
         'N_Clusters': len(set(dbscan_labels)) - (1 if -1 in dbscan_labels else 0),
         'N_Noise': np.sum(dbscan_labels == -1),
-        'time': dbscan_time
+        'purity': evaluate_cluster_purity(dbscan_labels, true_labels),
+        'time': dbscan_time,
+        'mem':dbscan_mem
     }
     
     # Calculate agreement between the algorithms - UPDATED
@@ -168,7 +248,9 @@ def evaluate_clustering_with_ground_truth(
     # Ground truth statistics
     gt_stats = {
         'N_True_Clusters': len(set(true_labels)),
-        'N_Samples': len(true_labels)
+        'N_Samples': len(true_labels),
+        'start_time': start_time,
+        'end_time': end_time
     }
     
     # Create comprehensive visualization - UPDATED TO INCLUDE DBSCAN
