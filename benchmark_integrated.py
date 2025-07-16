@@ -3,7 +3,7 @@ import numpy as np
 import time
 import psutil
 import os
-from typing import List, Dict,Tuple
+from typing import List, Dict,Tuple,Set
 from sklearn.cluster import HDBSCAN,DBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
@@ -326,6 +326,150 @@ def sort_csv_by_toa(data_path: str, toa_column: str = "TOA(ns)") -> None:
 
     except Exception as e:
         print(f"❌ Error while sorting CSV: {e}")
+
+def batch_data_by_emitters(data_path: str, emitters_per_batch_list: List[int] = None, 
+                          assume_sorted: bool = True) -> List[Dict[str, any]]:
+    """
+    Process data by batching according to specified number of unique emitters for each batch.
+    Loads entire dataset into memory for efficient processing.
+    
+    Args:
+        data_path (str): Path to the CSV data file
+        emitters_per_batch_list (List[int]): List specifying number of emitters for each batch.
+                                           If None, defaults to [10] for a single batch.
+        assume_sorted (bool): Whether to assume data is pre-sorted by TOA
+    
+    Returns:
+        List of dictionaries in TestConfig format with keys:
+        - name: str
+        - data_type: str  
+        - data_path: str
+        - sample_size: int
+        - batch_number: int
+        - emitter_count: int
+        - emitter_ids: list
+    """
+    
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found at: {data_path}")
+
+    # Set default if no list provided
+    if emitters_per_batch_list is None:
+        emitters_per_batch_list = [10]
+    
+    # Validate the list
+    if not emitters_per_batch_list or any(count <= 0 for count in emitters_per_batch_list):
+        raise ValueError("All emitter counts must be positive integers")
+    
+    # Load entire dataset
+    try:
+        df = pd.read_csv(data_path)
+    except Exception as e:
+        raise RuntimeError(f"Error loading data file: {e}")
+    
+    if 'EmitterId' not in df.columns:
+        raise ValueError("Required column 'EmitterId' not found")
+    
+    # Sort by TOA if not pre-sorted and TOA column exists
+    if not assume_sorted and 'TOA(ns)' in df.columns:
+        df = df.sort_values('TOA(ns)')
+    
+    # Create batch directory
+    batch_dir = os.path.join(os.path.dirname(data_path), 'batch_data')
+    os.makedirs(batch_dir, exist_ok=True)
+    
+    # Get all unique emitters in order of first appearance
+    unique_emitters = df['EmitterId'].drop_duplicates().tolist()
+    total_emitters = len(unique_emitters)
+    
+    print(f"Total emitters found: {total_emitters}")
+    print(f"Requested batch sizes: {emitters_per_batch_list}")
+    
+    test_configs = []
+    current_batch = 1
+    
+    try:
+        for batch_size in emitters_per_batch_list:
+            # Validate batch size
+            if batch_size > total_emitters:
+                raise ValueError(f"Batch size {batch_size} exceeds total available emitters ({total_emitters})")
+            
+            # Select first N emitters for this batch (can reuse emitters across batches)
+            batch_emitters = unique_emitters[:batch_size]
+            
+            # Filter data for these emitters
+            batch_data = df[df['EmitterId'].isin(batch_emitters)]
+            
+            if len(batch_data) == 0:
+                print(f"No data found for batch {current_batch} emitters")
+                continue
+            
+            # Save batch and create config
+            config = _save_emitter_batch_and_create_config(
+                batch_data, batch_dir, current_batch, set(batch_emitters)
+            )
+            test_configs.append(config)
+            
+            print(f"Batch {current_batch}: {len(batch_emitters)} emitters, {len(batch_data)} samples")
+            
+            current_batch += 1
+        
+        print(f"Processing complete: {len(test_configs)} batches created")
+        return test_configs
+        
+    except Exception as e:
+        raise RuntimeError(f"Error in emitter-based processing: {e}")
+
+
+def _save_emitter_batch_and_create_config(batch_data: pd.DataFrame, batch_dir: str, batch_num: int,
+                                         emitter_ids: Set[str]) -> Dict[str, any]:
+    """
+    Helper function to save a batch of data and create a TestConfig dictionary for emitter-based batching.
+    
+    Returns:
+        Dictionary in TestConfig format
+    """
+    # Save batch file
+    batch_filename = f"Data_Batch_{batch_num}.csv"
+    batch_file_path = os.path.join(batch_dir, batch_filename)
+    batch_data.to_csv(batch_file_path, index=False)
+    
+    # Create TestConfig dictionary
+    config = {
+        'name': f"EmitterBatch_{batch_num}_{len(batch_data)}samples_{len(emitter_ids)}emitters",
+        'data_type': f"EmitterBatch_{batch_num}",
+        'data_path': batch_file_path,
+        'sample_size': len(batch_data),
+        'batch_number': batch_num,
+        'emitter_count': len(emitter_ids),
+        'emitter_ids': sorted(list(emitter_ids))  # Convert to sorted list for consistency
+    }
+    
+    return config
+
+
+def get_total_emitters(data_path: str) -> int:
+    """
+    Get the total number of unique emitters in the dataset.
+    
+    Args:
+        data_path (str): Path to the CSV data file
+    
+    Returns:
+        int: Total number of unique emitters
+    """
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found at: {data_path}")
+    
+    try:
+        df = pd.read_csv(data_path)
+        if 'EmitterId' not in df.columns:
+            raise ValueError("Required column 'EmitterId' not found")
+        
+        return df['EmitterId'].nunique()
+    
+    except Exception as e:
+        raise RuntimeError(f"Error counting unique emitters: {e}")
 
 
 def batch_data(data_path: str, batch_interval: float = 2.0, 
@@ -905,14 +1049,14 @@ if __name__ == "__main__":
         print("Please run 'make' to build the project first")
         exit(1)
 
-    # Make sure data file path exists
     batch_interval = 2 # TOA Interval in seconds
 
-    speed_benchmark = True # Benchmark for speed
+    speed_benchmark = False # Benchmark for speed
 
     use_lat_lng = False
     add_jitter = True
     add_jitter_n_noise = False
+    batch_by_num_emitters = True
 
     data_path = "./data/pdwInterns_with_latlng.csv"
     batch_path = "./data/batch_data"
@@ -940,8 +1084,12 @@ if __name__ == "__main__":
         
         if add_jitter:
             noisy_data_path = "./data/noisy_pdwInterns_with_latlng.csv"
-            batch_path = "./data/batch_data_jitter"
-        
+
+            if batch_by_num_emitters:
+                batch_path = "./data/batch_data_jitter_by_emitters"
+            else:
+                batch_path = "./data/batch_data_jitter"
+            
             if add_jitter_n_noise:
                 noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
                 batch_path = "./data/batch_data_noise"
@@ -951,8 +1099,11 @@ if __name__ == "__main__":
             noisy_data_path = add_gaussian_noise(data_path, std_map=std_map)
         
         if not os.path.exists(batch_path):
-            # Chunk size can be taken as the maximum number of points in a batch
-            data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
+            if batch_by_num_emitters:
+                emitters_per_batch = [10,20,30,40,50,60,70,80,90,100]
+                data = batch_data_by_emitters(data_path=noisy_data_path, emitters_per_batch_list = emitters_per_batch, assume_sorted = True)
+            else:# Chunk size can be taken as the maximum number of points in a batch
+                data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
         results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
 
