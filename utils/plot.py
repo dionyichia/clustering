@@ -72,14 +72,14 @@ def create_comprehensive_clustering_plot(
     ax5 = axes[1, 1]
     ax5.axis('off')
 
-    start = pd.to_datetime(gt_stats['start_time'], unit='ns')
-    end = pd.to_datetime(gt_stats['end_time'], unit='ns')
+    start = gt_stats['start_time'] / 1e9
+    end = gt_stats['end_time'] / 1e9
     interval = end - start
     
     # Create metrics table - UPDATED TO INCLUDE DBSCAN
     metrics_text = f"""
     Dataset Statistics:
-    • Batch Interval ({interval}): {start} - {end}
+    • Batch Interval ({interval:.3f}s): {start:.3f}s - {end:.3f}s
     • Samples: {gt_stats['N_Samples']:,}
     • True Clusters: {gt_stats['N_True_Clusters']}
     

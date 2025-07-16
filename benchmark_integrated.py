@@ -498,16 +498,12 @@ def run_benchmark_with_visualization_batched(
     
     if data_path is None:
         raise ValueError("Must supply data_path to batch_data folder")
-    
-    # 1) Make sure batches exist
-    batch_dir = os.path.join(os.path.dirname(data_path), "batch_data")
-    if not os.path.isdir(batch_dir):
-        raise FileNotFoundError(f"batch_data folder not found at {batch_dir}")
+
     
     # 2) Grab every CSV in there
-    csv_paths = sorted(glob.glob(os.path.join(batch_dir, "*.csv")))
+    csv_paths = sorted(glob.glob(os.path.join(data_path, "*.csv")))
     if not csv_paths:
-        raise FileNotFoundError("No .csv files found in batch_data/")
+        raise FileNotFoundError("No .csv files found in batch_data folder")
     
     # Memory monitoring function
     def log_memory_usage(stage):
@@ -589,7 +585,7 @@ def run_benchmark_with_visualization_batched(
             
             # sklearn HDBSCAN for comparison
             print("  -> Running sklearn HDBSCAN...")
-            sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+            sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size, cluster_selection_method='leaf')
             sklearn_labels, sklearn_time, sklearn_memory = track_performance(
                 sklearn_model.fit_predict, X
             )
@@ -910,14 +906,16 @@ if __name__ == "__main__":
         exit(1)
 
     # Make sure data file path exists
-    data_path = "./data/pdwInterns_with_latlng.csv"
-    
-    batch_path = "./data/batch_data"
     batch_interval = 2 # TOA Interval in seconds
 
-    use_lat_lng = True
-
     speed_benchmark = True # Benchmark for speed
+
+    use_lat_lng = False
+    add_jitter = True
+    add_jitter_n_noise = False
+
+    data_path = "./data/pdwInterns_with_latlng.csv"
+    batch_path = "./data/batch_data"
 
     if not os.path.exists(data_path):
         print(f"Date file not found at {data_path}")
@@ -932,17 +930,21 @@ if __name__ == "__main__":
     else:
         # if data path provided will use data file else will generate 2d data.
         if use_lat_lng:
-            noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
-
             std_array = [1.0, 0.00021, 0.2, 0.2, 0.1, 0.1] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
         else:
-            noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
-
             std_array = [1.0, 0.00021, 0.2, 0.2] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
+        
+        if add_jitter:
+            noisy_data_path = "./data/noisy_pdwInterns_with_latlng.csv"
+            batch_path = "./data/batch_data_jitter"
+        
+            if add_jitter_n_noise:
+                noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
+                batch_path = "./data/batch_data_noise"
 
         if not os.path.exists(noisy_data_path):
             print(f"Noisy Data not found at {noisy_data_path}")
