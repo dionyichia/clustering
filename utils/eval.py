@@ -145,6 +145,170 @@ def evaluate_cluster_purity(predicted_labels: np.ndarray, true_labels: np.ndarra
         'purity_ratio': purity_ratio,
     }
 
+
+def evaluate_cluster_quality_detailed(predicted_labels: np.ndarray, true_labels: np.ndarray) -> Dict[str, Any]:
+    """
+    Evaluate cluster quality with detailed metrics including perfectly separated,
+    broken-up, missing, incorrectly merged, and false clusters.
+    
+    Parameters:
+    -----------
+    predicted_labels : array-like, shape (n_samples,)
+        Cluster labels from the algorithm being evaluated
+    true_labels : array-like, shape (n_samples,)
+        Ground truth cluster labels
+        
+    Returns:
+    --------
+    dict : Dictionary containing detailed cluster quality metrics
+    """
+    
+    # Convert to numpy arrays
+    predicted_labels = np.array(predicted_labels)
+    true_labels = np.array(true_labels)
+    
+    # Get unique labels (excluding noise label -1)
+    unique_predicted = set(predicted_labels)
+    unique_true = set(true_labels)
+    
+    # Remove noise labels for analysis
+    if -1 in unique_predicted:
+        unique_predicted.remove(-1)
+    if -1 in unique_true:
+        unique_true.remove(-1)
+    
+    # Initialize metrics
+    perfectly_separated = []
+    broken_up_clusters = []
+    missing_clusters = []
+    incorrectly_merged = []
+    false_clusters = []
+    
+    # Analyze each predicted cluster
+    for pred_cluster_id in unique_predicted:
+        pred_mask = predicted_labels == pred_cluster_id
+        pred_true_labels = true_labels[pred_mask]
+        
+        # Get unique ground truth labels in this predicted cluster
+        unique_true_in_pred = set(pred_true_labels)
+        # Remove noise if present
+        if -1 in unique_true_in_pred:
+            unique_true_in_pred.remove(-1)
+        
+        # Check if cluster contains only noise points
+        if len(unique_true_in_pred) == 0:
+            false_clusters.append({
+                'predicted_cluster_id': pred_cluster_id,
+                'n_points': np.sum(pred_mask),
+                'reason': 'contains_only_noise'
+            })
+        # Check if cluster contains points from multiple ground truth clusters
+        elif len(unique_true_in_pred) > 1:
+            incorrectly_merged.append({
+                'predicted_cluster_id': pred_cluster_id,
+                'n_points': np.sum(pred_mask),
+                'ground_truth_labels': list(unique_true_in_pred),
+                'n_ground_truth_clusters': len(unique_true_in_pred)
+            })
+        # Check if cluster contains points from exactly one ground truth cluster
+        elif len(unique_true_in_pred) == 1:
+            true_cluster_id = list(unique_true_in_pred)[0]
+            
+            # Check if this predicted cluster contains ALL points from the ground truth cluster
+            true_mask = true_labels == true_cluster_id
+            true_points_in_pred = np.sum(pred_mask & true_mask)
+            total_true_points = np.sum(true_mask)
+            
+            if true_points_in_pred == total_true_points:
+                # This is a perfectly separated cluster
+                perfectly_separated.append({
+                    'predicted_cluster_id': pred_cluster_id,
+                    'ground_truth_cluster_id': true_cluster_id,
+                    'n_points': np.sum(pred_mask),
+                    'coverage': 1.0
+                })
+            else:
+                # This might be part of a broken-up cluster
+                # We'll analyze this from the ground truth perspective below
+                pass
+    
+    # Analyze each ground truth cluster to find broken-up and missing clusters
+    ground_truth_coverage = {}
+    
+    for true_cluster_id in unique_true:
+        true_mask = true_labels == true_cluster_id
+        true_pred_labels = predicted_labels[true_mask]
+        
+        # Get unique predicted labels for this ground truth cluster
+        unique_pred_in_true = set(true_pred_labels)
+
+        # Remove noise if present
+        if -1 in unique_pred_in_true:
+            unique_pred_in_true.remove(-1)
+        
+        ground_truth_coverage[true_cluster_id] = {
+            'total_points': np.sum(true_mask),
+            # 'predicted_clusters': list(unique_pred_in_true),
+            'n_predicted_clusters': len(unique_pred_in_true),
+            'points_in_noise': np.sum(true_pred_labels == -1)
+        }
+        
+        # Check if ground truth cluster is missing (no predicted cluster contains its points)
+        if len(unique_pred_in_true) == 0:
+            missing_clusters.append({
+                'ground_truth_cluster_id': true_cluster_id,
+                'n_points': np.sum(true_mask),
+                'all_points_in_noise': True
+            })
+        # Check if ground truth cluster is broken up (points spread across multiple predicted clusters)
+        elif len(unique_pred_in_true) > 1:
+            # Calculate how points are distributed
+            distribution = {}
+            for pred_id in unique_pred_in_true:
+                overlap_mask = true_mask & (predicted_labels == pred_id)
+                distribution[pred_id] = np.sum(overlap_mask)
+            
+            broken_up_clusters.append({
+                'ground_truth_cluster_id': true_cluster_id,
+                'n_points': np.sum(true_mask),
+                'predicted_clusters': list(unique_pred_in_true),
+                'n_predicted_clusters': len(unique_pred_in_true),
+                'distribution': distribution
+            })
+    
+    # Calculate summary statistics
+    n_predicted_clusters = len(unique_predicted)
+    n_true_clusters = len(unique_true)
+    
+    # Calculate ratios
+    perfectly_separated_ratio = len(perfectly_separated) / n_predicted_clusters if n_predicted_clusters > 0 else 0
+    broken_up_ratio = len(broken_up_clusters) / n_true_clusters if n_true_clusters > 0 else 0
+    missing_ratio = len(missing_clusters) / n_true_clusters if n_true_clusters > 0 else 0
+    incorrectly_merged_ratio = len(incorrectly_merged) / n_predicted_clusters if n_predicted_clusters > 0 else 0
+    false_clusters_ratio = len(false_clusters) / n_predicted_clusters if n_predicted_clusters > 0 else 0
+    
+    return {
+        # 'perfectly_separated_clusters': perfectly_separated,
+        # 'broken_up_clusters': broken_up_clusters,
+        # 'missing_clusters': missing_clusters,
+        # 'incorrectly_merged_clusters': incorrectly_merged,
+        # 'false_clusters': false_clusters,
+        'n_perfectly_separated': len(perfectly_separated),
+        'n_broken_up': len(broken_up_clusters),
+        'n_missing': len(missing_clusters),
+        'n_incorrectly_merged': len(incorrectly_merged),
+        'n_false_clusters': len(false_clusters),
+        # 'perfectly_separated_ratio': perfectly_separated_ratio,
+        # 'broken_up_ratio': broken_up_ratio,
+        # 'missing_ratio': missing_ratio,
+        # 'incorrectly_merged_ratio': incorrectly_merged_ratio,
+        # 'false_clusters_ratio': false_clusters_ratio,
+        # 'n_predicted_clusters': n_predicted_clusters,
+        # 'n_true_clusters': n_true_clusters,
+        # 'ground_truth_coverage': ground_truth_coverage
+    }
+
+
 def evaluate_clustering_with_ground_truth(
     X: np.ndarray,
     gpu_labels: np.ndarray,
@@ -203,7 +367,8 @@ def evaluate_clustering_with_ground_truth(
         'V_Measure': v_measure_score(true_labels, gpu_labels),
         'N_Clusters': len(set(gpu_labels)) - (1 if -1 in gpu_labels else 0),
         'N_Noise': np.sum(gpu_labels == -1),
-        'purity': evaluate_cluster_purity(gpu_labels, true_labels),
+        # 'purity': evaluate_cluster_purity(gpu_labels, true_labels),
+        'detailed_quality': evaluate_cluster_quality_detailed(gpu_labels, true_labels),
         'time': gpu_time,
         'mem': gpu_mem
     }
@@ -216,7 +381,8 @@ def evaluate_clustering_with_ground_truth(
         'V_Measure': v_measure_score(true_labels, sklearn_labels),
         'N_Clusters': len(set(sklearn_labels)) - (1 if -1 in sklearn_labels else 0),
         'N_Noise': np.sum(sklearn_labels == -1),
-        'purity': evaluate_cluster_purity(sklearn_labels, true_labels),
+        # 'purity': evaluate_cluster_purity(sklearn_labels, true_labels),
+        'detailed_quality': evaluate_cluster_quality_detailed(sklearn_labels, true_labels),
         'time': sklearn_time,
         'mem': sklearn_mem
     }
@@ -230,7 +396,8 @@ def evaluate_clustering_with_ground_truth(
         'V_Measure': v_measure_score(true_labels, dbscan_labels),
         'N_Clusters': len(set(dbscan_labels)) - (1 if -1 in dbscan_labels else 0),
         'N_Noise': np.sum(dbscan_labels == -1),
-        'purity': evaluate_cluster_purity(dbscan_labels, true_labels),
+        # 'purity': evaluate_cluster_purity(dbscan_labels, true_labels),
+        'detailed_quality': evaluate_cluster_quality_detailed(dbscan_labels, true_labels),
         'time': dbscan_time,
         'mem':dbscan_mem
     }

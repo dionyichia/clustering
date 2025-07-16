@@ -75,7 +75,13 @@ def create_comprehensive_clustering_plot(
     start = gt_stats['start_time'] / 1e9
     end = gt_stats['end_time'] / 1e9
     interval = end - start
-    
+
+    # SAVED IN CASE WE NEED
+    # • Num Pure Clusters: {gpu_metrics['purity']['n_pure_clusters']:.3f}
+    # • Num Impure Clusters: {gpu_metrics['purity']['n_impure_clusters']:.3f}
+    # • Num Noise Clusters: {gpu_metrics['purity']['n_noise_clusters']:.3f}
+    # • Purity Ratio (Pure / Total): {gpu_metrics['purity']['purity_ratio']:.3f}
+
     # Create metrics table - UPDATED TO INCLUDE DBSCAN
     metrics_text = f"""
     Dataset Statistics:
@@ -88,10 +94,11 @@ def create_comprehensive_clustering_plot(
     • Memory: {gpu_metrics['mem']:.3f}
     • Clusters Found: {gpu_metrics['N_Clusters']}
     • Noise Points: {gpu_metrics['N_Noise']}
-    • Num Pure Clusters: {gpu_metrics['purity']['n_pure_clusters']:.3f}
-    • Num Impure Clusters: {gpu_metrics['purity']['n_impure_clusters']:.3f}
-    • Num Noise Clusters: {gpu_metrics['purity']['n_noise_clusters']:.3f}
-    • Purity Ratio (Pure / Total): {gpu_metrics['purity']['purity_ratio']:.3f}
+    • Perfectly Separated Clusters: {gpu_metrics['detailed_quality']['n_perfectly_separated']}
+    • Broken Up Clusters: {gpu_metrics['detailed_quality']['n_broken_up']}
+    • Missing Clusters: {gpu_metrics['detailed_quality']['n_missing']}
+    • Incorrectly Merged: {gpu_metrics['detailed_quality']['n_incorrectly_merged']}
+    • False Clusters: {gpu_metrics['detailed_quality']['n_incorrectly_merged']}
     • Homogeneity: {gpu_metrics['Homogeneity']}
     • V-Measure: {gpu_metrics['V_Measure']:.3f}
 
@@ -100,10 +107,11 @@ def create_comprehensive_clustering_plot(
     • Memory: {sklearn_metrics['mem']:.3f}
     • Clusters Found: {sklearn_metrics['N_Clusters']}
     • Noise Points: {sklearn_metrics['N_Noise']}
-    • Num Pure Clusters: {sklearn_metrics['purity']['n_pure_clusters']:.3f}
-    • Num Impure Clusters: {sklearn_metrics['purity']['n_impure_clusters']:.3f}
-    • Num Noise Clusters: {sklearn_metrics['purity']['n_noise_clusters']:.3f}
-    • Purity Ratio (Pure / Total): {sklearn_metrics['purity']['purity_ratio']:.3f}
+    • Perfectly Separated Clusters: {sklearn_metrics['detailed_quality']['n_perfectly_separated']}
+    • Broken Up Clusters: {sklearn_metrics['detailed_quality']['n_broken_up']}
+    • Missing Clusters: {sklearn_metrics['detailed_quality']['n_missing']}
+    • Incorrectly Merged: {sklearn_metrics['detailed_quality']['n_incorrectly_merged']}
+    • False Clusters: {sklearn_metrics['detailed_quality']['n_incorrectly_merged']}
     • Homogeneity: {sklearn_metrics['Homogeneity']}
     • V-Measure: {sklearn_metrics['V_Measure']:.3f}
     
@@ -112,10 +120,11 @@ def create_comprehensive_clustering_plot(
     • Memory: {dbscan_metrics['mem']:.3f}
     • Clusters Found: {dbscan_metrics['N_Clusters']}
     • Noise Points: {dbscan_metrics['N_Noise']}
-    • Num Pure Clusters: {dbscan_metrics['purity']['n_pure_clusters']:.3f}
-    • Num Impure Clusters: {dbscan_metrics['purity']['n_impure_clusters']:.3f}
-    • Num Noise Clusters: {dbscan_metrics['purity']['n_noise_clusters']:.3f}
-    • Purity Ratio (Pure / Total): {dbscan_metrics['purity']['purity_ratio']:.3f}
+    • Perfectly Separated Clusters: {dbscan_metrics['detailed_quality']['n_perfectly_separated']}
+    • Broken Up Clusters: {dbscan_metrics['detailed_quality']['n_broken_up']}
+    • Missing Clusters: {dbscan_metrics['detailed_quality']['n_missing']}
+    • Incorrectly Merged: {dbscan_metrics['detailed_quality']['n_incorrectly_merged']}
+    • False Clusters: {dbscan_metrics['detailed_quality']['n_incorrectly_merged']}
     • Homogeneity: {dbscan_metrics['Homogeneity']}
     • V-Measure: {dbscan_metrics['V_Measure']:.3f}
 
