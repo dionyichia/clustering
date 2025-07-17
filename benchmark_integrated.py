@@ -629,6 +629,7 @@ def run_benchmark_with_visualization_batched(
     min_samples = 3
     min_cluster_size = 20
     quiet_mode = True
+    timeout = 5 * 60  # 5 minute timeout 
 
     emitter_col = "EmitterId"
 
@@ -718,21 +719,37 @@ def run_benchmark_with_visualization_batched(
             print("  -> Running GPU HDBSCAN...")
             dims = X.shape[1]
             
-            gpu_labels, gpu_time, gpu_mem = track_performance(
-                gpu_hdbscan.fit_predict_batched, csv_file,
+            # gpu_labels, gpu_time, gpu_mem = track_performance(
+            #     gpu_hdbscan.fit_predict_batched, csv_file,
+            #     dims,
+            #     min_samples=min_samples,
+            #     min_cluster_size=min_cluster_size,
+            #     quiet_mode=quiet_mode
+            # )
+            gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
+                gpu_hdbscan.fit_predict_batched, 
+                csv_file,
                 dims,
                 min_samples=min_samples,
                 min_cluster_size=min_cluster_size,
-                quiet_mode=quiet_mode
+                quiet_mode=quiet_mode,
+                timeout=timeout
             )
             log_memory_usage("after GPU HDBSCAN")
             
             # sklearn HDBSCAN for comparison
             print("  -> Running sklearn HDBSCAN...")
-            sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size, cluster_selection_method='leaf')
-            sklearn_labels, sklearn_time, sklearn_memory = track_performance(
-                sklearn_model.fit_predict, X
-            )
+            if n_samples > 250000:
+                sklearn_model,sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = None,None, timeout, 0, True
+            else:
+                sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+                sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = track_performance_with_timeout(
+                    sklearn_model.fit_predict, X, timeout=timeout
+                )
+            # sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size, cluster_selection_method='leaf')
+            # sklearn_labels, sklearn_time, sklearn_memory = track_performance(
+            #     sklearn_model.fit_predict, X
+            # )
             
             # Explicitly delete the model to free memory
             del sklearn_model
@@ -742,12 +759,18 @@ def run_benchmark_with_visualization_batched(
             # DBSCAN for comparison - with memory management
             print("  -> Running sklearn DBSCAN with optimal epsilon and minPoints...")
             print(f"DBSCAN Parameters: min_samples={min_samples}, epsilon={epsilon}")
-            
-            # Create DBSCAN model in a separate scope for better memory management
-            dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
-            dbscan_labels, dbscan_time, dbscan_memory = track_performance(
-                dbscan_model.fit_predict, X_scaled
-            )
+            if n_samples > 450000:
+                dbscan_model,dbscan_labels, dbscan_time, dbscan_memory, dbscan_timeout = None,None, timeout, 0, True
+            else:
+                dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
+                dbscan_labels, dbscan_time, dbscan_memory, dbscan_timeout = track_performance_with_timeout(
+                    dbscan_model.fit_predict, X_scaled, timeout=timeout
+                ) 
+            # # Create DBSCAN model in a separate scope for better memory management
+            # dbscan_model = DBSCAN(eps=epsilon, min_samples=min_samples)
+            # dbscan_labels, dbscan_time, dbscan_memory = track_performance(
+            #     dbscan_model.fit_predict, X_scaled
+            # )
             
             # Explicitly delete DBSCAN model and scaled data
             del dbscan_model
@@ -776,9 +799,9 @@ def run_benchmark_with_visualization_batched(
                 'GPU_Memory': gpu_mem,
                 'Sklearn_Memory': sklearn_memory,
                 'DBSCAN_Memory': dbscan_memory,
-                'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'],
-                'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'],
-                'DBSCAN_Clusters': eval_results['dbscan_metrics']['N_Clusters'],
+                'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'] if gpu_labels is not None and not gpu_timeout else None,
+                'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'] if sklearn_labels is not None and not sklearn_timeout else None,
+                'DBSCAN_Clusters': eval_results['dbscan_metrics']['N_Clusters'] if dbscan_labels is not None and not dbscan_timeout else None,
                 'True_Clusters': eval_results['ground_truth_stats']['N_True_Clusters'],
                 # Add accuracy metrics
                 'GPU_ARI': eval_results['gpu_metrics']['ARI'],
@@ -791,6 +814,9 @@ def run_benchmark_with_visualization_batched(
                 'DBSCAN_NMI': eval_results['dbscan_metrics']['NMI'],
                 'DBSCAN_V_Measure': eval_results['dbscan_metrics']['V_Measure'],
                 'Algorithm_Agreement_ARI': eval_results['algorithm_agreement']['ARI'],
+                'GPU_Timeout': gpu_timeout,
+                'Sklearn_Timeout': sklearn_timeout,
+                'DBSCAN_Timeout': dbscan_timeout
             }
             results.append(result)
             

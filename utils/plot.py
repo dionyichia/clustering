@@ -8,11 +8,16 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 def create_comprehensive_clustering_plot(
-    X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,  # NEW PARAMETER
-    gpu_metrics, sklearn_metrics, dbscan_metrics, algo_agreement, gt_stats,  # NEW PARAMETER
+    X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
+    gpu_metrics, sklearn_metrics, dbscan_metrics, algo_agreement, gt_stats,
     batch_name, feature_names, save_dir
 ):
     """Create a comprehensive 4-panel plot showing clustering results and metrics"""
+    
+    # Early return if critical data is missing
+    if X is None or true_labels is None:
+        print(f"Skipping plot for {batch_name}: Missing critical data (X or true_labels)")
+        return
     
     # Use PCA for visualization if more than 2 features
     if X.shape[1] > 2:
@@ -43,27 +48,45 @@ def create_comprehensive_clustering_plot(
     
     # Plot 2: GPU HDBSCAN
     ax2 = axes[0, 1]
-    scatter2 = ax2.scatter(X_plot[:, 0], X_plot[:, 1], c=gpu_labels, 
-                          cmap=cmap_discrete, s=30, alpha=0.7)
-    ax2.set_title('GPU HDBSCAN Results', fontweight='bold')
+    if gpu_labels is not None:
+        scatter2 = ax2.scatter(X_plot[:, 0], X_plot[:, 1], c=gpu_labels, 
+                              cmap=cmap_discrete, s=30, alpha=0.7)
+        ax2.set_title('GPU HDBSCAN Results', fontweight='bold')
+    else:
+        ax2.text(0.5, 0.5, 'GPU HDBSCAN\nSkipped/Timeout', 
+                transform=ax2.transAxes, ha='center', va='center', 
+                fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
+        ax2.set_title('GPU HDBSCAN Results (Skipped)', fontweight='bold')
     ax2.set_xlabel(x_label)
     ax2.set_ylabel(y_label)
     ax2.grid(True, alpha=0.3)
     
     # Plot 3: Sklearn HDBSCAN
     ax3 = axes[0, 2]
-    scatter3 = ax3.scatter(X_plot[:, 0], X_plot[:, 1], c=sklearn_labels, 
-                          cmap=cmap_discrete, s=30, alpha=0.7)
-    ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold')
+    if sklearn_labels is not None:
+        scatter3 = ax3.scatter(X_plot[:, 0], X_plot[:, 1], c=sklearn_labels, 
+                              cmap=cmap_discrete, s=30, alpha=0.7)
+        ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold')
+    else:
+        ax3.text(0.5, 0.5, 'Sklearn HDBSCAN\nSkipped/Timeout', 
+                transform=ax3.transAxes, ha='center', va='center', 
+                fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
+        ax3.set_title('Sklearn HDBSCAN Results (Skipped)', fontweight='bold')
     ax3.set_xlabel(x_label)
     ax3.set_ylabel(y_label)
     ax3.grid(True, alpha=0.3)
     
-    # Plot 4: DBSCAN - NEW PLOT
+    # Plot 4: DBSCAN
     ax4 = axes[1, 0]
-    scatter4 = ax4.scatter(X_plot[:, 0], X_plot[:, 1], c=dbscan_labels, 
-                          cmap=cmap_discrete, s=30, alpha=0.7)
-    ax4.set_title('DBSCAN Results', fontweight='bold')
+    if dbscan_labels is not None:
+        scatter4 = ax4.scatter(X_plot[:, 0], X_plot[:, 1], c=dbscan_labels, 
+                              cmap=cmap_discrete, s=30, alpha=0.7)
+        ax4.set_title('DBSCAN Results', fontweight='bold')
+    else:
+        ax4.text(0.5, 0.5, 'DBSCAN\nSkipped/Timeout', 
+                transform=ax4.transAxes, ha='center', va='center', 
+                fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
+        ax4.set_title('DBSCAN Results (Skipped)', fontweight='bold')
     ax4.set_xlabel(x_label)
     ax4.set_ylabel(y_label)
     ax4.grid(True, alpha=0.3)
@@ -76,13 +99,28 @@ def create_comprehensive_clustering_plot(
     end = gt_stats['end_time'] / 1e9
     interval = end - start
 
-    # SAVED IN CASE WE NEED
-    # • Num Pure Clusters: {gpu_metrics['purity']['n_pure_clusters']:.3f}
-    # • Num Impure Clusters: {gpu_metrics['purity']['n_impure_clusters']:.3f}
-    # • Num Noise Clusters: {gpu_metrics['purity']['n_noise_clusters']:.3f}
-    # • Purity Ratio (Pure / Total): {gpu_metrics['purity']['purity_ratio']:.3f}
+    # Helper function to safely format metric values
+    def safe_format(value, format_str="{:.3f}", default="N/A"):
+        if value is None:
+            return default
+        try:
+            return format_str.format(value)
+        except:
+            return default
 
-    # Create metrics table - UPDATED TO INCLUDE DBSCAN
+    # Helper function to safely access nested dict values
+    def safe_get_nested(d, keys, default="N/A"):
+        if d is None:
+            return default
+        try:
+            current = d
+            for key in keys:
+                current = current[key]
+            return current if current is not None else default
+        except (KeyError, TypeError):
+            return default
+
+    # Create metrics table with guards
     metrics_text = f"""
     Dataset Statistics:
     • Batch Interval ({interval:.3f}s): {start:.3f}s - {end:.3f}s
@@ -90,43 +128,43 @@ def create_comprehensive_clustering_plot(
     • True Clusters: {gt_stats['N_True_Clusters']}
     
     GPU HDBSCAN vs Ground Truth:
-    • Time: {gpu_metrics['time']:.3f}
-    • Memory: {gpu_metrics['mem']:.3f}
-    • Clusters Found: {gpu_metrics['N_Clusters']}
-    • Noise Points: {gpu_metrics['N_Noise']}
-    • Perfectly Separated Clusters: {gpu_metrics['detailed_quality']['n_perfectly_separated']}
-    • Broken Up Clusters: {gpu_metrics['detailed_quality']['n_broken_up']}
-    • Missing Clusters: {gpu_metrics['detailed_quality']['n_missing']}
-    • Incorrectly Merged: {gpu_metrics['detailed_quality']['n_incorrectly_merged']}
-    • False Clusters: {gpu_metrics['detailed_quality']['n_incorrectly_merged']}
-    • Homogeneity: {gpu_metrics['Homogeneity']}
-    • V-Measure: {gpu_metrics['V_Measure']:.3f}
+    • Time: {safe_format(gpu_metrics['time'] if gpu_metrics else None)}
+    • Memory: {safe_format(gpu_metrics['mem'] if gpu_metrics else None)}
+    • Clusters Found: {safe_format(gpu_metrics['N_Clusters'] if gpu_metrics else None, "{}", "N/A")}
+    • Noise Points: {safe_format(gpu_metrics['N_Noise'] if gpu_metrics else None, "{}", "N/A")}
+    • Perfectly Separated: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
+    • Broken Up Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
+    • Missing Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_missing'])}
+    • Incorrectly Merged: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
+    • False Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+    • Homogeneity: {safe_format(gpu_metrics['Homogeneity'] if gpu_metrics else None)}
+    • V-Measure: {safe_format(gpu_metrics['V_Measure'] if gpu_metrics else None)}
 
     Sklearn HDBSCAN vs Ground Truth:
-    • Time: {sklearn_metrics['time']:.3f}
-    • Memory: {sklearn_metrics['mem']:.3f}
-    • Clusters Found: {sklearn_metrics['N_Clusters']}
-    • Noise Points: {sklearn_metrics['N_Noise']}
-    • Perfectly Separated Clusters: {sklearn_metrics['detailed_quality']['n_perfectly_separated']}
-    • Broken Up Clusters: {sklearn_metrics['detailed_quality']['n_broken_up']}
-    • Missing Clusters: {sklearn_metrics['detailed_quality']['n_missing']}
-    • Incorrectly Merged: {sklearn_metrics['detailed_quality']['n_incorrectly_merged']}
-    • False Clusters: {sklearn_metrics['detailed_quality']['n_incorrectly_merged']}
-    • Homogeneity: {sklearn_metrics['Homogeneity']}
-    • V-Measure: {sklearn_metrics['V_Measure']:.3f}
+    • Time: {safe_format(sklearn_metrics['time'] if sklearn_metrics else None)}
+    • Memory: {safe_format(sklearn_metrics['mem'] if sklearn_metrics else None)}
+    • Clusters Found: {safe_format(sklearn_metrics['N_Clusters'] if sklearn_metrics else None, "{}", "N/A")}
+    • Noise Points: {safe_format(sklearn_metrics['N_Noise'] if sklearn_metrics else None, "{}", "N/A")}
+    • Perfectly Separated: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
+    • Broken Up Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
+    • Missing Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_missing'])}
+    • Incorrectly Merged: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
+    • False Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+    • Homogeneity: {safe_format(sklearn_metrics['Homogeneity'] if sklearn_metrics else None)}
+    • V-Measure: {safe_format(sklearn_metrics['V_Measure'] if sklearn_metrics else None)}
     
     DBSCAN vs Ground Truth:
-    • Time: {dbscan_metrics['time']:.3f}
-    • Memory: {dbscan_metrics['mem']:.3f}
-    • Clusters Found: {dbscan_metrics['N_Clusters']}
-    • Noise Points: {dbscan_metrics['N_Noise']}
-    • Perfectly Separated Clusters: {dbscan_metrics['detailed_quality']['n_perfectly_separated']}
-    • Broken Up Clusters: {dbscan_metrics['detailed_quality']['n_broken_up']}
-    • Missing Clusters: {dbscan_metrics['detailed_quality']['n_missing']}
-    • Incorrectly Merged: {dbscan_metrics['detailed_quality']['n_incorrectly_merged']}
-    • False Clusters: {dbscan_metrics['detailed_quality']['n_incorrectly_merged']}
-    • Homogeneity: {dbscan_metrics['Homogeneity']}
-    • V-Measure: {dbscan_metrics['V_Measure']:.3f}
+    • Time: {safe_format(dbscan_metrics['time'] if dbscan_metrics else None)}
+    • Memory: {safe_format(dbscan_metrics['mem'] if dbscan_metrics else None)}
+    • Clusters Found: {safe_format(dbscan_metrics['N_Clusters'] if dbscan_metrics else None, "{}", "N/A")}
+    • Noise Points: {safe_format(dbscan_metrics['N_Noise'] if dbscan_metrics else None, "{}", "N/A")}
+    • Perfectly Separated: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
+    • Broken Up Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
+    • Missing Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_missing'])}
+    • Incorrectly Merged: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
+    • False Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+    • Homogeneity: {safe_format(dbscan_metrics['Homogeneity'] if dbscan_metrics else None)}
+    • V-Measure: {safe_format(dbscan_metrics['V_Measure'] if dbscan_metrics else None)}
 
     """
     
@@ -141,15 +179,15 @@ def create_comprehensive_clustering_plot(
     Algorithm Agreement:
     
     GPU vs Sklearn HDBSCAN:
-    • ARI: {algo_agreement['ARI']:.3f}
-    • NMI: {algo_agreement['NMI']:.3f}
-    • V-Measure: {algo_agreement['V_Measure']:.3f}
+    • ARI: {safe_format(algo_agreement['ARI'] if algo_agreement else None)}
+    • NMI: {safe_format(algo_agreement['NMI'] if algo_agreement else None)}
+    • V-Measure: {safe_format(algo_agreement['V_Measure'] if algo_agreement else None)}
     
     GPU HDBSCAN vs DBSCAN:
-    • ARI: {algo_agreement['GPU_vs_DBSCAN_ARI']:.3f}
+    • ARI: {safe_format(algo_agreement['GPU_vs_DBSCAN_ARI'] if algo_agreement else None)}
     
     Sklearn HDBSCAN vs DBSCAN:
-    • ARI: {algo_agreement['Sklearn_vs_DBSCAN_ARI']:.3f}
+    • ARI: {safe_format(algo_agreement['Sklearn_vs_DBSCAN_ARI'] if algo_agreement else None)}
     
     Metric Interpretation:
     • ARI/NMI/V-Measure: 0.0-1.0 (higher = better)
