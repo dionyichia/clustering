@@ -220,7 +220,6 @@ def load_dbscan_parameters(params_file: str) -> Dict[str, Tuple[int, float]]:
     print(f"Loaded parameters for {len(params)} files")
     return params
 
-
 def generate_test_data(data_type='blobs', n_samples=1000):
     """Generate synthetic datasets for testing"""
     if data_type == 'blobs':
@@ -909,7 +908,7 @@ def track_performance_with_timeout(func, *args, timeout=300, **kwargs):
     if timed_out:
         execution_time = timeout
         result = None
-        print(f"Algo execution timed out > {timeout / 60} seconds")
+        print(f"Algo execution timed out > {timeout / 60} minutes")
         
     if exception:
         raise exception
