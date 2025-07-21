@@ -404,9 +404,9 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
             subtree_stability += cluster_stability[child].stability;
         }
         
-        std::cout << "[DEBUG] Cluster " << node << ": own_stability=" 
-                  << cluster_stability[node].stability << ", subtree_stability=" 
-                  << subtree_stability << ", size=" << cluster_stability[node].cluster_size << "\n";
+       // std::cout << "[DEBUG] Cluster " << node << ": own_stability=" 
+       //           << cluster_stability[node].stability << ", subtree_stability=" 
+       //           << subtree_stability << ", size=" << cluster_stability[node].cluster_size << "\n";
         
         // EOM decision: keep cluster if its stability > sum of children's stability
         // Check parent cluster doesn't exceed max_cluster_size
@@ -417,7 +417,7 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
             cluster_stability[node].is_cluster = false;
             cluster_stability[node].stability = subtree_stability;
             
-            std::cout << "[DEBUG] Cluster " << node << " rejected - selecting children\n";
+        //    std::cout << "[DEBUG] Cluster " << node << " rejected - selecting children\n";
         } else {
             // Keep this cluster, mark all descendants as non-clusters
             std::vector<int> descendants = bfs_descendants(node, cluster_stability);
@@ -426,8 +426,8 @@ std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_
                     cluster_stability[desc].is_cluster = false;
                 }
             }
-            std::cout << "[DEBUG] Cluster " << node << " selected - " 
-                      << descendants.size() << " descendants marked as non-clusters\n";
+        //    std::cout << "[DEBUG] Cluster " << node << " selected - " 
+        //              << descendants.size() << " descendants marked as non-clusters\n";
         }
     }
     
