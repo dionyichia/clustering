@@ -872,8 +872,8 @@ std::vector<std::vector<int>> single_linkage_clustering(
             break;
         case clusterMethod::Leaf:
             std::cout << "=== CLUSTER METHOD SELECTED: LEAF ===" << std::endl;
-            // std::cout << "\n=== CALCULATING OPTIMAL CLUSTER SELECTION EPSILON ===" << std::endl;
-            // auto cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
+            std::cout << "\n=== CALCULATING OPTIMAL CLUSTER SELECTION EPSILON ===" << std::endl;
+            auto cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
             selected_clusters = leaf_selection(combined_condensed_tree, cluster_selection_epsilon=cluster_selection_epsilon);
             break;
         default:
