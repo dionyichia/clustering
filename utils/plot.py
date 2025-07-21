@@ -12,13 +12,12 @@ def create_comprehensive_clustering_plot(
     gpu_metrics, sklearn_metrics, dbscan_metrics, algo_agreement, gt_stats,
     batch_name, feature_names, save_dir
 ):
-    """Create a comprehensive 4-panel plot showing clustering results and metrics"""
+    """Create a comprehensive 4-panel plot showing clustering results and detailed metrics"""
     
-    # Early return if critical data is missing
     if X is None or true_labels is None:
         print(f"Skipping plot for {batch_name}: Missing critical data (X or true_labels)")
         return
-    
+
     # Use PCA for visualization if more than 2 features
     if X.shape[1] > 2:
         pca = PCA(n_components=2)
@@ -29,19 +28,66 @@ def create_comprehensive_clustering_plot(
         X_plot = X
         x_label = feature_names[0] if len(feature_names) > 0 else "Feature 1"
         y_label = feature_names[1] if len(feature_names) > 1 else "Feature 2"
-    
-    # Create figure with subplots - UPDATED TO 2x3 LAYOUT
-    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
-    fig.suptitle(f'Clustering Analysis: {batch_name}', fontsize=16, fontweight='bold')
-    
+
+    # Create figure with 2 rows x 3 columns
+    fig, axes = plt.subplots(2, 3, figsize=(26, 18))
+    fig.suptitle(f'Clustering Analysis: {batch_name}', fontsize=20, fontweight='bold')
+
+    # Batch Statistics Header
+    # fig.text(0.5, 0.34, 'Batch Statistics', ha='center', fontsize=16, fontweight='bold')
+    # fig.text(0.23, 0.30, 'Dataset Overview', ha='center', fontsize=13, style='italic')
+    # fig.text(0.53, 0.30, 'Predicted Emitter Analysis', ha='center', fontsize=13, style='italic')
+    # fig.text(0.83, 0.30, 'Predicted Cluster Analysis', ha='center', fontsize=13, style='italic')
+
     # Color maps
     cmap_discrete = plt.cm.tab20
+
+    # First row: scatter plots
+    _plot_clustering_results(
+        axes[:2, :], X_plot, x_label, y_label, cmap_discrete,
+        true_labels, gpu_labels, sklearn_labels, dbscan_labels
+    )
+
+    # # Row 3, Col 1: Batch stats
+    # axes[1, 0].axis('off')
+    # if gt_stats:
+    #     start = gt_stats['start_time'] / 1e9
+    #     end = gt_stats['end_time'] / 1e9
+    #     interval = end - start
+
+    #     dataset_info = (
+    #         f"• {gt_stats['N_Samples']:,} samples\n"
+    #         f"• {gt_stats['N_True_Clusters']} true clusters\n"
+    #         f"• {interval:.3f}s interval"
+    #     )
+
+    #     axes[2, 0].text(0.5, 0.5, dataset_info, transform=axes[2, 0].transAxes,
+    #                    ha='center', va='center', fontsize=12, weight='bold')
+
+    # Row 2, Col 1: Emitter metrics
+    axes[1, 1].axis('off')
+    _plot_emitter_perspective_metrics(axes[1, 1], gpu_metrics, sklearn_metrics, dbscan_metrics, gt_stats)
+
+    # Row 2, Col 2: Cluster metrics
+    axes[1, 2].axis('off')
+    _plot_cluster_perspective_metrics(axes[1, 2], gpu_metrics, sklearn_metrics, dbscan_metrics)
+
+    # Save
+    save_path = os.path.join(save_dir, f'{batch_name}_clustering_analysis.png')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"Comprehensive plot saved to: {save_path}")
+
+
+def _plot_clustering_results(axes, X_plot, x_label, y_label, cmap_discrete,
+                           true_labels, gpu_labels, sklearn_labels, dbscan_labels):
+    """Plot the 4 clustering result scatter plots"""
     
     # Plot 1: Ground Truth
     ax1 = axes[0, 0]
     scatter1 = ax1.scatter(X_plot[:, 0], X_plot[:, 1], c=true_labels, 
                           cmap=cmap_discrete, s=30, alpha=0.7)
-    ax1.set_title('Ground Truth (EmitterId)', fontweight='bold')
+    ax1.set_title('Ground Truth (EmitterId)', fontweight='bold', fontsize=14)
     ax1.set_xlabel(x_label)
     ax1.set_ylabel(y_label)
     ax1.grid(True, alpha=0.3)
@@ -51,12 +97,12 @@ def create_comprehensive_clustering_plot(
     if gpu_labels is not None:
         scatter2 = ax2.scatter(X_plot[:, 0], X_plot[:, 1], c=gpu_labels, 
                               cmap=cmap_discrete, s=30, alpha=0.7)
-        ax2.set_title('GPU HDBSCAN Results', fontweight='bold')
+        ax2.set_title('GPU HDBSCAN Results', fontweight='bold', fontsize=14)
     else:
         ax2.text(0.5, 0.5, 'GPU HDBSCAN\nSkipped/Timeout', 
                 transform=ax2.transAxes, ha='center', va='center', 
                 fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
-        ax2.set_title('GPU HDBSCAN Results (Skipped)', fontweight='bold')
+        ax2.set_title('GPU HDBSCAN Results (Skipped)', fontweight='bold', fontsize=14)
     ax2.set_xlabel(x_label)
     ax2.set_ylabel(y_label)
     ax2.grid(True, alpha=0.3)
@@ -66,12 +112,12 @@ def create_comprehensive_clustering_plot(
     if sklearn_labels is not None:
         scatter3 = ax3.scatter(X_plot[:, 0], X_plot[:, 1], c=sklearn_labels, 
                               cmap=cmap_discrete, s=30, alpha=0.7)
-        ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold')
+        ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold', fontsize=14)
     else:
         ax3.text(0.5, 0.5, 'Sklearn HDBSCAN\nSkipped/Timeout', 
                 transform=ax3.transAxes, ha='center', va='center', 
                 fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
-        ax3.set_title('Sklearn HDBSCAN Results (Skipped)', fontweight='bold')
+        ax3.set_title('Sklearn HDBSCAN Results (Skipped)', fontweight='bold', fontsize=14)
     ax3.set_xlabel(x_label)
     ax3.set_ylabel(y_label)
     ax3.grid(True, alpha=0.3)
@@ -81,34 +127,24 @@ def create_comprehensive_clustering_plot(
     if dbscan_labels is not None:
         scatter4 = ax4.scatter(X_plot[:, 0], X_plot[:, 1], c=dbscan_labels, 
                               cmap=cmap_discrete, s=30, alpha=0.7)
-        ax4.set_title('DBSCAN Results', fontweight='bold')
+        ax4.set_title('DBSCAN Results', fontweight='bold', fontsize=14)
     else:
         ax4.text(0.5, 0.5, 'DBSCAN\nSkipped/Timeout', 
                 transform=ax4.transAxes, ha='center', va='center', 
                 fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
-        ax4.set_title('DBSCAN Results (Skipped)', fontweight='bold')
+        ax4.set_title('DBSCAN Results (Skipped)', fontweight='bold', fontsize=14)
     ax4.set_xlabel(x_label)
     ax4.set_ylabel(y_label)
     ax4.grid(True, alpha=0.3)
+
+
+def _plot_emitter_perspective_metrics(ax, gpu_metrics, sklearn_metrics, dbscan_metrics, gt_stats):
+    """Display emitter perspective metrics as formatted text"""
+
+    # ax.axis('off')
+    # ax.set_title('Predicted Emitter Analysis', fontweight='bold', fontsize=14, pad=20)
     
-    # Plot 5: Metrics Summary - UPDATED
-    ax5 = axes[1, 1]
-    ax5.axis('off')
-
-    start = gt_stats['start_time'] / 1e9
-    end = gt_stats['end_time'] / 1e9
-    interval = end - start
-
-    # Helper function to safely format metric values
-    def safe_format(value, format_str="{:.3f}", default="N/A"):
-        if value is None:
-            return default
-        try:
-            return format_str.format(value)
-        except:
-            return default
-
-    # Helper function to safely access nested dict values
+    # Helper function to safely get nested values
     def safe_get_nested(d, keys, default="N/A"):
         if d is None:
             return default
@@ -116,98 +152,347 @@ def create_comprehensive_clustering_plot(
             current = d
             for key in keys:
                 current = current[key]
-            return current if current is not None else default
+            return str(current) if current is not None else default
         except (KeyError, TypeError):
             return default
+    
+    # Helper function to format values
+    def safe_format(value, format_str="{:.3f}", default="N/A"):
+        if value is None:
+            return default
+        try:
+            return format_str.format(value)
+        except (ValueError, TypeError):
+            return str(value) if value is not None else default
+        
+    if gt_stats:
+        start = gt_stats['start_time'] / 1e9
+        end = gt_stats['end_time'] / 1e9
+        interval = end - start
+        
+    # Create metrics text
+    metrics_text = f"""Emitter Analysis
 
-    # Create metrics table with guards
-    metrics_text = f"""
-    Dataset Statistics:
-    • Batch Interval ({interval:.3f}s): {start:.3f}s - {end:.3f}s
-    • Samples: {gt_stats['N_Samples']:,}
-    • True Clusters: {gt_stats['N_True_Clusters']}
-    
-    GPU HDBSCAN vs Ground Truth:
-    • Time: {safe_format(gpu_metrics['time'] if gpu_metrics else None)}
-    • Memory: {safe_format(gpu_metrics['mem'] if gpu_metrics else None)}
-    • Clusters Found: {safe_format(gpu_metrics['N_Clusters'] if gpu_metrics else None, "{}", "N/A")}
-    • Noise Points: {safe_format(gpu_metrics['N_Noise'] if gpu_metrics else None, "{}", "N/A")}
-    • Perfectly Separated: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
-    • Broken Up Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
-    • Missing Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_missing'])}
-    • Incorrectly Merged: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
-    • False Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
-    • Homogeneity: {safe_format(gpu_metrics['Homogeneity'] if gpu_metrics else None)}
-    • V-Measure: {safe_format(gpu_metrics['V_Measure'] if gpu_metrics else None)}
+Dataset Statistics:
+• Batch Interval ({interval:.3f}s): {start:.3f}s - {end:.3f}s
+• Samples: {gt_stats['N_Samples']:,}
+• True Emitters: {gt_stats['N_True_Clusters']}
 
-    Sklearn HDBSCAN vs Ground Truth:
-    • Time: {safe_format(sklearn_metrics['time'] if sklearn_metrics else None)}
-    • Memory: {safe_format(sklearn_metrics['mem'] if sklearn_metrics else None)}
-    • Clusters Found: {safe_format(sklearn_metrics['N_Clusters'] if sklearn_metrics else None, "{}", "N/A")}
-    • Noise Points: {safe_format(sklearn_metrics['N_Noise'] if sklearn_metrics else None, "{}", "N/A")}
-    • Perfectly Separated: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
-    • Broken Up Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
-    • Missing Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_missing'])}
-    • Incorrectly Merged: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
-    • False Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
-    • Homogeneity: {safe_format(sklearn_metrics['Homogeneity'] if sklearn_metrics else None)}
-    • V-Measure: {safe_format(sklearn_metrics['V_Measure'] if sklearn_metrics else None)}
-    
-    DBSCAN vs Ground Truth:
-    • Time: {safe_format(dbscan_metrics['time'] if dbscan_metrics else None)}
-    • Memory: {safe_format(dbscan_metrics['mem'] if dbscan_metrics else None)}
-    • Clusters Found: {safe_format(dbscan_metrics['N_Clusters'] if dbscan_metrics else None, "{}", "N/A")}
-    • Noise Points: {safe_format(dbscan_metrics['N_Noise'] if dbscan_metrics else None, "{}", "N/A")}
-    • Perfectly Separated: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
-    • Broken Up Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
-    • Missing Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_missing'])}
-    • Incorrectly Merged: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
-    • False Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
-    • Homogeneity: {safe_format(dbscan_metrics['Homogeneity'] if dbscan_metrics else None)}
-    • V-Measure: {safe_format(dbscan_metrics['V_Measure'] if dbscan_metrics else None)}
+GPU HDBSCAN: 
+• Perfect: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated_emitters'])}
+• Broken Up: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_broken_up_emitters'])}
+• Missing: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_missing_emitters'])}
+• Merged: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}
+• Total Emitters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_true_clusters'])}
 
-    """
+Sklearn HDBSCAN: 
+• Perfect: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated_emitters'])}
+• Broken Up: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_broken_up_emitters'])}
+• Missing: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_missing_emitters'])}
+• Merged: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}
+• Total Emitters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_true_clusters'])}
+
+DBSCAN:
+• Perfect: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated_emitters'])}
+• Broken Up: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_broken_up_emitters'])}
+• Missing: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_missing_emitters'])}
+• Merged: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}
+• Total Emitters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_true_clusters'])}"""
     
-    ax5.text(0.05, 0.95, metrics_text, transform=ax5.transAxes, 
-             fontsize=9, verticalalignment='top', fontfamily='monospace')
+    # Display the metrics text
+    ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, ha='left', va='top',
+            fontsize=10, fontfamily='monospace')
     
-    # Plot 6: Algorithm Agreement - NEW PLOT
-    ax6 = axes[1, 2]
-    ax6.axis('off')
+    # # Add explanation at the bottom
+    # explanation = (
+    #     "Perfect: Emitters with all points in exactly one cluster\n"
+    #     "Broken Up: Emitters split across multiple pure clusters\n"
+    #     "Missing: Emitters with all points classified as noise\n"
+    #     "Merged: Emitters mixed with points from other emitters"
+    # )
     
-    agreement_text = f"""
-    Algorithm Agreement:
+    # ax.text(0.5, 0.08, explanation, transform=ax.transAxes, ha='left', va='bottom',
+    #         fontsize=8, style='italic')
+
+
+def _plot_cluster_perspective_metrics(ax, gpu_metrics, sklearn_metrics, dbscan_metrics):
+    """Display cluster perspective metrics as formatted text"""
     
-    GPU vs Sklearn HDBSCAN:
-    • ARI: {safe_format(algo_agreement['ARI'] if algo_agreement else None)}
-    • NMI: {safe_format(algo_agreement['NMI'] if algo_agreement else None)}
-    • V-Measure: {safe_format(algo_agreement['V_Measure'] if algo_agreement else None)}
+    # ax.axis('off')
+    # ax.set_title('Predicted Cluster Analysis', fontweight='bold', fontsize=14, pad=20)
     
-    GPU HDBSCAN vs DBSCAN:
-    • ARI: {safe_format(algo_agreement['GPU_vs_DBSCAN_ARI'] if algo_agreement else None)}
+    # Helper function to safely get nested values
+    def safe_get_nested(d, keys, default="N/A"):
+        if d is None:
+            return default
+        try:
+            current = d
+            for key in keys:
+                current = current[key]
+            return str(current) if current is not None else default
+        except (KeyError, TypeError):
+            return default
     
-    Sklearn HDBSCAN vs DBSCAN:
-    • ARI: {safe_format(algo_agreement['Sklearn_vs_DBSCAN_ARI'] if algo_agreement else None)}
+    # Helper function to format values
+    def safe_format(value, format_str="{:.3f}", default="N/A"):
+        if value is None:
+            return default
+        try:
+            return format_str.format(value)
+        except (ValueError, TypeError):
+            return str(value) if value is not None else default
     
-    Metric Interpretation:
-    • ARI/NMI/V-Measure: 0.0-1.0 (higher = better)
-    • > 0.5: Good
-    • > 0.7: Strong
-    • > 0.9: Excellent
-    """
+    # Create metrics text
+    metrics_text = f"""Cluster Analysis
+
+GPU HDBSCAN
+• Total Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_predicted_clusters'])}
+• Pure: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_pure_clusters'])}
+• Impure: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_impure_clusters'])}
+• Broken Up: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_broken_up_clusters'])}
+• False: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+
+• Time: {safe_format(gpu_metrics['time'] if gpu_metrics else None)}
+• Memory: {safe_format(gpu_metrics['mem'] if gpu_metrics else None)}
+• Homogeneity: {safe_format(gpu_metrics['Homogeneity'] if gpu_metrics else None)}
+• V-Measure: {safe_format(gpu_metrics['V_Measure'] if gpu_metrics else None)}
+
+Sklearn HDBSCAN:
+• Total Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_predicted_clusters'])}
+• Pure: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_pure_clusters'])}
+• Impure: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_impure_clusters'])}
+• Broken Up: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_broken_up_clusters'])}
+• False: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+
+• Time: {safe_format(sklearn_metrics['time'] if sklearn_metrics else None)}
+• Memory: {safe_format(sklearn_metrics['mem'] if sklearn_metrics else None)}
+• Homogeneity: {safe_format(sklearn_metrics['Homogeneity'] if sklearn_metrics else None)}
+• V-Measure: {safe_format(sklearn_metrics['V_Measure'] if sklearn_metrics else None)}
+
+DBSCAN:
+• Total Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_predicted_clusters'])}
+• Pure: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_pure_clusters'])}
+• Impure: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_impure_clusters'])}
+• Broken Up: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_broken_up_clusters'])}
+• False: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+
+• Time: {safe_format(dbscan_metrics['time'] if dbscan_metrics else None)}
+• Memory: {safe_format(dbscan_metrics['mem'] if dbscan_metrics else None)}
+• Homogeneity: {safe_format(dbscan_metrics['Homogeneity'] if dbscan_metrics else None)}
+• V-Measure: {safe_format(dbscan_metrics['V_Measure'] if dbscan_metrics else None)}"""
     
-    ax6.text(0.05, 0.95, agreement_text, transform=ax6.transAxes, 
-             fontsize=9, verticalalignment='top', fontfamily='monospace',
-             bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.8))
+    # Display the metrics text
+    ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, ha='left', va='top',
+            fontsize=10, fontfamily='monospace')
     
-    plt.tight_layout()
+    # # Add explanation at the bottom
+    # explanation = (
+    #     "Pure: Clusters with points from exactly one emitter\n"
+    #     "Broken Up: Pure clusters that are siblings (same emitter split)\n"
+    #     "Impure: Clusters with points from multiple emitters\n"
+    #     "False: Clusters containing only noise points"
+    # )
     
-    # Save the plot
-    save_path = os.path.join(save_dir, f'{batch_name}_clustering_analysis.png')
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.show()
+    # ax.text(0.05, 0.01, explanation, transform=ax.transAxes, ha='left', va='bottom',
+    #         fontsize=8, style='italic')
     
-    print(f"Comprehensive plot saved to: {save_path}")
+
+# def create_comprehensive_clustering_plot(
+#     X, gpu_labels, sklearn_labels, dbscan_labels, true_labels,
+#     gpu_metrics, sklearn_metrics, dbscan_metrics, algo_agreement, gt_stats,
+#     batch_name, feature_names, save_dir
+# ):
+#     """Create a comprehensive 4-panel plot showing clustering results and metrics"""
+    
+#     # Early return if critical data is missing
+#     if X is None or true_labels is None:
+#         print(f"Skipping plot for {batch_name}: Missing critical data (X or true_labels)")
+#         return
+    
+#     # Use PCA for visualization if more than 2 features
+#     if X.shape[1] > 2:
+#         pca = PCA(n_components=2)
+#         X_plot = pca.fit_transform(X)
+#         x_label = f"PC1 ({pca.explained_variance_ratio_[0]:.2%} variance)"
+#         y_label = f"PC2 ({pca.explained_variance_ratio_[1]:.2%} variance)"
+#     else:
+#         X_plot = X
+#         x_label = feature_names[0] if len(feature_names) > 0 else "Feature 1"
+#         y_label = feature_names[1] if len(feature_names) > 1 else "Feature 2"
+    
+#     # Create figure with subplots - UPDATED TO 2x3 LAYOUT
+#     fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+#     fig.suptitle(f'Clustering Analysis: {batch_name}', fontsize=16, fontweight='bold')
+    
+#     # Color maps
+#     cmap_discrete = plt.cm.tab20
+    
+#     # Plot 1: Ground Truth
+#     ax1 = axes[0, 0]
+#     scatter1 = ax1.scatter(X_plot[:, 0], X_plot[:, 1], c=true_labels, 
+#                           cmap=cmap_discrete, s=30, alpha=0.7)
+#     ax1.set_title('Ground Truth (EmitterId)', fontweight='bold')
+#     ax1.set_xlabel(x_label)
+#     ax1.set_ylabel(y_label)
+#     ax1.grid(True, alpha=0.3)
+    
+#     # Plot 2: GPU HDBSCAN
+#     ax2 = axes[0, 1]
+#     if gpu_labels is not None:
+#         scatter2 = ax2.scatter(X_plot[:, 0], X_plot[:, 1], c=gpu_labels, 
+#                               cmap=cmap_discrete, s=30, alpha=0.7)
+#         ax2.set_title('GPU HDBSCAN Results', fontweight='bold')
+#     else:
+#         ax2.text(0.5, 0.5, 'GPU HDBSCAN\nSkipped/Timeout', 
+#                 transform=ax2.transAxes, ha='center', va='center', 
+#                 fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
+#         ax2.set_title('GPU HDBSCAN Results (Skipped)', fontweight='bold')
+#     ax2.set_xlabel(x_label)
+#     ax2.set_ylabel(y_label)
+#     ax2.grid(True, alpha=0.3)
+    
+#     # Plot 3: Sklearn HDBSCAN
+#     ax3 = axes[0, 2]
+#     if sklearn_labels is not None:
+#         scatter3 = ax3.scatter(X_plot[:, 0], X_plot[:, 1], c=sklearn_labels, 
+#                               cmap=cmap_discrete, s=30, alpha=0.7)
+#         ax3.set_title('Sklearn HDBSCAN Results', fontweight='bold')
+#     else:
+#         ax3.text(0.5, 0.5, 'Sklearn HDBSCAN\nSkipped/Timeout', 
+#                 transform=ax3.transAxes, ha='center', va='center', 
+#                 fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
+#         ax3.set_title('Sklearn HDBSCAN Results (Skipped)', fontweight='bold')
+#     ax3.set_xlabel(x_label)
+#     ax3.set_ylabel(y_label)
+#     ax3.grid(True, alpha=0.3)
+    
+#     # Plot 4: DBSCAN
+#     ax4 = axes[1, 0]
+#     if dbscan_labels is not None:
+#         scatter4 = ax4.scatter(X_plot[:, 0], X_plot[:, 1], c=dbscan_labels, 
+#                               cmap=cmap_discrete, s=30, alpha=0.7)
+#         ax4.set_title('DBSCAN Results', fontweight='bold')
+#     else:
+#         ax4.text(0.5, 0.5, 'DBSCAN\nSkipped/Timeout', 
+#                 transform=ax4.transAxes, ha='center', va='center', 
+#                 fontsize=14, bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray"))
+#         ax4.set_title('DBSCAN Results (Skipped)', fontweight='bold')
+#     ax4.set_xlabel(x_label)
+#     ax4.set_ylabel(y_label)
+#     ax4.grid(True, alpha=0.3)
+    
+#     # Plot 5: Metrics Summary - UPDATED
+#     ax5 = axes[1, 1]
+#     ax5.axis('off')
+
+#     start = gt_stats['start_time'] / 1e9
+#     end = gt_stats['end_time'] / 1e9
+#     interval = end - start
+
+#     # Helper function to safely format metric values
+#     def safe_format(value, format_str="{:.3f}", default="N/A"):
+#         if value is None:
+#             return default
+#         try:
+#             return format_str.format(value)
+#         except:
+#             return default
+
+#     # Helper function to safely access nested dict values
+#     def safe_get_nested(d, keys, default="N/A"):
+#         if d is None:
+#             return default
+#         try:
+#             current = d
+#             for key in keys:
+#                 current = current[key]
+#             return current if current is not None else default
+#         except (KeyError, TypeError):
+#             return default
+
+#     # Create metrics table with guards
+#     metrics_text = f"""
+#     Dataset Statistics:
+#     • Batch Interval ({interval:.3f}s): {start:.3f}s - {end:.3f}s
+#     • Samples: {gt_stats['N_Samples']:,}
+#     • True Clusters: {gt_stats['N_True_Clusters']}
+    
+#     GPU HDBSCAN vs Ground Truth:
+#     • Time: {safe_format(gpu_metrics['time'] if gpu_metrics else None)}
+#     • Memory: {safe_format(gpu_metrics['mem'] if gpu_metrics else None)}
+#     • Clusters Found: {safe_format(gpu_metrics['N_Clusters'] if gpu_metrics else None, "{}", "N/A")}
+#     • Noise Points: {safe_format(gpu_metrics['N_Noise'] if gpu_metrics else None, "{}", "N/A")}
+#     • Perfectly Separated: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
+#     • Broken Up Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
+#     • Missing Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_missing'])}
+#     • Incorrectly Merged: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
+#     • False Clusters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+#     • Homogeneity: {safe_format(gpu_metrics['Homogeneity'] if gpu_metrics else None)}
+#     • V-Measure: {safe_format(gpu_metrics['V_Measure'] if gpu_metrics else None)}
+
+#     Sklearn HDBSCAN vs Ground Truth:
+#     • Time: {safe_format(sklearn_metrics['time'] if sklearn_metrics else None)}
+#     • Memory: {safe_format(sklearn_metrics['mem'] if sklearn_metrics else None)}
+#     • Clusters Found: {safe_format(sklearn_metrics['N_Clusters'] if sklearn_metrics else None, "{}", "N/A")}
+#     • Noise Points: {safe_format(sklearn_metrics['N_Noise'] if sklearn_metrics else None, "{}", "N/A")}
+#     • Perfectly Separated: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
+#     • Broken Up Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
+#     • Missing Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_missing'])}
+#     • Incorrectly Merged: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
+#     • False Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+#     • Homogeneity: {safe_format(sklearn_metrics['Homogeneity'] if sklearn_metrics else None)}
+#     • V-Measure: {safe_format(sklearn_metrics['V_Measure'] if sklearn_metrics else None)}
+    
+#     DBSCAN vs Ground Truth:
+#     • Time: {safe_format(dbscan_metrics['time'] if dbscan_metrics else None)}
+#     • Memory: {safe_format(dbscan_metrics['mem'] if dbscan_metrics else None)}
+#     • Clusters Found: {safe_format(dbscan_metrics['N_Clusters'] if dbscan_metrics else None, "{}", "N/A")}
+#     • Noise Points: {safe_format(dbscan_metrics['N_Noise'] if dbscan_metrics else None, "{}", "N/A")}
+#     • Perfectly Separated: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated'])}
+#     • Broken Up Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_broken_up'])}
+#     • Missing Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_missing'])}
+#     • Incorrectly Merged: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged'])}
+#     • False Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_false_clusters'])}
+#     • Homogeneity: {safe_format(dbscan_metrics['Homogeneity'] if dbscan_metrics else None)}
+#     • V-Measure: {safe_format(dbscan_metrics['V_Measure'] if dbscan_metrics else None)}
+
+#     """
+    
+#     ax5.text(0.05, 0.95, metrics_text, transform=ax5.transAxes, 
+#              fontsize=9, verticalalignment='top', fontfamily='monospace')
+    
+#     # Plot 6: Algorithm Agreement - NEW PLOT
+#     ax6 = axes[1, 2]
+#     ax6.axis('off')
+    
+#     agreement_text = f"""
+#     Algorithm Agreement:
+    
+#     GPU vs Sklearn HDBSCAN:
+#     • ARI: {safe_format(algo_agreement['ARI'] if algo_agreement else None)}
+#     • NMI: {safe_format(algo_agreement['NMI'] if algo_agreement else None)}
+#     • V-Measure: {safe_format(algo_agreement['V_Measure'] if algo_agreement else None)}
+    
+#     GPU HDBSCAN vs DBSCAN:
+#     • ARI: {safe_format(algo_agreement['GPU_vs_DBSCAN_ARI'] if algo_agreement else None)}
+    
+#     Sklearn HDBSCAN vs DBSCAN:
+#     • ARI: {safe_format(algo_agreement['Sklearn_vs_DBSCAN_ARI'] if algo_agreement else None)}
+    
+#     """
+    
+#     ax6.text(0.05, 0.95, agreement_text, transform=ax6.transAxes, 
+#              fontsize=9, verticalalignment='top', fontfamily='monospace',
+#              bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.8))
+    
+#     plt.tight_layout()
+    
+#     # Save the plot
+#     save_path = os.path.join(save_dir, f'{batch_name}_clustering_analysis.png')
+#     plt.savefig(save_path, dpi=300, bbox_inches='tight')
+#     plt.show()
+    
+#     print(f"Comprehensive plot saved to: {save_path}")
 
 
 def plot_benchmark_results(df):

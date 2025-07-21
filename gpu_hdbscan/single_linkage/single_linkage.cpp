@@ -728,6 +728,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
     // ====== STABILITY CALCULATION & CLUSTER EXTRACTION ======
     std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
     auto cluster_stability = calculate_cluster_stability(combined_condensed_tree);
+    
     std::cout << "=== CLUSTER EXTRACTION STEP ===" << std::endl;
     std::set<int> selected_clusters;
     switch(clusterMethod){

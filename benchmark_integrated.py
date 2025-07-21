@@ -675,7 +675,7 @@ def run_benchmark_with_visualization_batched(
         with open(csv_file, 'r') as f:
             n_samples = sum(1 for _ in f) - 1
         
-        print(f"Processing {n_samples} rows")
+        print(f"  Processing {n_samples} rows")
         
         try:
             # Read data in a try-except block to handle memory issues
@@ -713,6 +713,8 @@ def run_benchmark_with_visualization_batched(
             del df
             gc.collect()
             # log_memory_usage("after clearing DataFrame")
+
+            print(f"  Params used for run: min_cluster_size = {min_cluster_size}, min_samples = {min_samples}")
             
             # GPU HDBSCAN on the file directly
             print("  -> Running GPU HDBSCAN...")
