@@ -361,18 +361,33 @@ def batch_data_by_emitters_fixed_samples(
     if emitter_col not in df.columns or toa_col not in df.columns:
         raise ValueError(f"Missing required column(s): {emitter_col}, {toa_col}")
 
-    # Determine which emitters to use (first appearance)
-    unique_emitters = df[emitter_col].drop_duplicates().tolist()
-    if num_emitters > len(unique_emitters):
-        raise ValueError(f"Requested {num_emitters} emitters but only "
-                         f"{len(unique_emitters)} available.")
-    selected = unique_emitters[:num_emitters]
-
     # How many samples per emitter?
     per_emitter = max_samples // num_emitters
     if per_emitter < 1:
         raise ValueError(f"max_samples ({max_samples}) too small for "
                          f"{num_emitters} emitters (need at least {num_emitters}).")
+    
+    # get the list of all emitters in order of appearance
+    unique_emitters = df[emitter_col].drop_duplicates().tolist()
+
+    # count how many samples each emitter has
+    counts = df[emitter_col].value_counts()
+
+    # filter to those emitters with at least per_emitter samples
+    eligible_emitters = [
+        eid for eid in unique_emitters
+        if counts.get(eid, 0) >= per_emitter
+    ]
+
+    # sanity‑check we have enough
+    if len(eligible_emitters) < num_emitters:
+        raise ValueError(
+            f"Only {len(eligible_emitters)} emitters have ≥{per_emitter} samples, "
+            f"but {num_emitters} were requested."
+        )
+
+    # pick the first num_emitters of those
+    selected = eligible_emitters[:num_emitters]
 
     # For each emitter, grab its per_emitter smallest TOA rows
     batches = []
