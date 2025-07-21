@@ -1230,6 +1230,5 @@ if __name__ == "__main__":
                 data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
         results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
-
         print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
         print("Plots saved to 'gpu_hdbscan_benchmark.png'")
