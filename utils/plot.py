@@ -717,6 +717,155 @@ def predict_completion_time(sample_sizes, times, target_size):
 
     return None
 
+def create_speed_benchmark_plot_new_metrics(results_df, output_dir, timeout):
+    """Create professional benchmark visualization, now over Number of Emitters."""
+    
+    # Set style
+    plt.style.use('ggplot')
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle('Clustering Algorithm Performance Benchmark', fontsize=16, fontweight='bold')
+    
+    # ---- extract x-axis values ----
+    emitters = results_df['Emitters'].values
+    
+    # ---- 1. Execution Time vs #Emitters ----
+    ax1.set_title('Execution Time vs Number of Emitters', fontweight='bold')
+    ax1.set_xlabel('Number of Emitters')
+    ax1.set_ylabel('Execution Time (seconds)')
+    
+    # gather times
+    gpu_times     = [row['GPU_Time']     if not row['GPU_Timeout']     else None for _, row in results_df.iterrows()]
+    sklearn_times = [row['Sklearn_Time'] if not row['Sklearn_Timeout'] else None for _, row in results_df.iterrows()]
+    dbscan_times  = [row['DBSCAN_Time']  if not row['DBSCAN_Timeout']  else None for _, row in results_df.iterrows()]
+    
+    # masks
+    mask_gpu     = [t is not None for t in gpu_times]
+    mask_sklearn = [t is not None for t in sklearn_times]
+    mask_dbscan  = [t is not None for t in dbscan_times]
+
+    # plot actual
+    line_gpu     = ax1.plot(emitters[mask_gpu],     np.array(gpu_times)[mask_gpu],     'o-', label='GPU HDBSCAN',     linewidth=2, markersize=6)[0] if any(mask_gpu) else None
+    line_sklearn = ax1.plot(emitters[mask_sklearn], np.array(sklearn_times)[mask_sklearn], 's-', label='Sklearn HDBSCAN', linewidth=2, markersize=6)[0] if any(mask_sklearn) else None
+    line_dbscan  = ax1.plot(emitters[mask_dbscan],  np.array(dbscan_times)[mask_dbscan],  '^-', label='DBSCAN',          linewidth=2, markersize=6)[0] if any(mask_dbscan) else None
+
+    # build valid data for predictions
+    valid_gpu     = [(e, t) for e, t in zip(emitters,     gpu_times)     if t is not None]
+    valid_sklearn = [(e, t) for e, t in zip(emitters, sklearn_times) if t is not None]
+    valid_dbscan  = [(e, t) for e, t in zip(emitters,  dbscan_times)  if t is not None]
+
+    # predicted points
+    pred_gpu_e,     pred_gpu_t     = [], []
+    pred_sklearn_e, pred_sklearn_t = [], []
+    pred_dbscan_e,  pred_dbscan_t  = [], []
+
+    for n_emit, g_t, s_t, d_t in zip(emitters, gpu_times, sklearn_times, dbscan_times):
+        # GPU
+        if g_t is None and len(valid_gpu) >= 2:
+            xs, ys = zip(*valid_gpu)
+            p = predict_completion_time(xs, ys, n_emit)
+            if p and p > 0:
+                pred_gpu_e.append(n_emit); pred_gpu_t.append(p)
+                c = line_gpu.get_color() if line_gpu else 'blue'
+                ax1.plot(n_emit, p, 'o', color=c, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{p/60:.1f}min', (n_emit, p), xytext=(5,5), textcoords='offset points', fontsize=8)
+
+        # Sklearn
+        if s_t is None and len(valid_sklearn) >= 2:
+            xs, ys = zip(*valid_sklearn)
+            p = predict_completion_time(xs, ys, n_emit)
+            if p and p > 0:
+                pred_sklearn_e.append(n_emit); pred_sklearn_t.append(p)
+                c = line_sklearn.get_color() if line_sklearn else 'orange'
+                ax1.plot(n_emit, p, 's', color=c, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{p/60:.1f}min', (n_emit, p), xytext=(5,5), textcoords='offset points', fontsize=8)
+
+        # DBSCAN
+        if d_t is None and len(valid_dbscan) >= 2:
+            xs, ys = zip(*valid_dbscan)
+            p = predict_completion_time(xs, ys, n_emit)
+            if p and p > 0:
+                pred_dbscan_e.append(n_emit); pred_dbscan_t.append(p)
+                c = line_dbscan.get_color() if line_dbscan else 'green'
+                ax1.plot(n_emit, p, '^', color=c, markersize=8, alpha=0.7)
+                ax1.annotate(f'~{p/60:.1f}min', (n_emit, p), xytext=(5,5), textcoords='offset points', fontsize=8)
+
+    # connect predicted lines
+    def _connect(pred_e, pred_t, mask, line, valid):
+        if pred_e and line:
+            actual_e = emitters[mask]
+            actual_t = np.array(valid) if isinstance(valid, list) else np.array([t for (_,t) in valid])
+            # last actual point
+            last_e, last_t = actual_e[-1], actual_t[-1]
+            xs = [last_e] + pred_e
+            ys = [last_t] + pred_t
+            ax1.plot(xs, ys, linestyle='--', color=line.get_color(), linewidth=1.5)
+
+    _connect(pred_gpu_e,     pred_gpu_t,     mask_gpu,     line_gpu,     [t for (_,t) in valid_gpu])
+    _connect(pred_sklearn_e, pred_sklearn_t, mask_sklearn, line_sklearn, [t for (_,t) in valid_sklearn])
+    _connect(pred_dbscan_e,  pred_dbscan_t,  mask_dbscan,  line_dbscan,  [t for (_,t) in valid_dbscan])
+
+    # timeout
+    ax1.axhline(timeout, color='red', linestyle='--', alpha=0.7, label=f'Timeout ({timeout/60:.0f} min)')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+
+    # ---- 2. Memory Usage vs #Emitters ----
+    ax2.set_title('Memory Usage vs Number of Emitters', fontweight='bold')
+    for col, marker in [('GPU_Memory','o-'), ('Sklearn_Memory','s-'), ('DBSCAN_Memory','^-')]:
+        m = results_df[col].notna() & (results_df[col] != 0)
+        if m.any():
+            algo = col.replace('_Memory','')
+            ax2.plot(emitters[m], results_df.loc[m, col], marker, label=algo, linewidth=2, markersize=6)
+    ax2.set_xlabel('Number of Emitters')
+    ax2.set_ylabel('Memory Usage (MB)')
+    ax2.set_xscale('log')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+
+    # ---- 3. Clustering Quality (Cluster Correctness) ----
+    ax3.set_title('Clustering Quality (Cluster Correctness)', fontweight='bold')
+    for algo in ['GPU', 'Sklearn', 'DBSCAN']:
+        ccol = f'{algo}_Correct_Clusters'
+        icol = f'{algo}_Incorrect_Clusters'
+        m = results_df[ccol].notna() & results_df[icol].notna()
+        if m.any():
+            correct = results_df.loc[m, ccol]
+            incorrect = results_df.loc[m, icol]
+            ratio = correct / (correct + incorrect)
+            ax3.plot(emitters[m], ratio, 'o-', label=algo, linewidth=2, markersize=6)
+
+    ax3.set_xlabel('Number of Emitters')
+    ax3.set_ylabel('Cluster Correctness')
+    ax3.set_ylim(0, 1)
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+
+
+    # ---- 4. Number of Clusters Found vs #Emitters ----
+    ax4.set_title('Number of Clusters Found', fontweight='bold')
+    for col, marker in [('GPU_Clusters','o-'), ('Sklearn_Clusters','s-'), ('DBSCAN_Clusters','^-')]:
+        m = results_df[col].notna()
+        if m.any():
+            algo = col.replace('_Clusters','')
+            ax4.plot(emitters[m], results_df.loc[m, col], marker, label=algo, linewidth=2, markersize=6)
+
+    ax4.set_xlabel('Number of Emitters')
+    ax4.set_ylabel('Number of Clusters')
+    ax4.set_xscale('log')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, 'speed_benchmark_comprehensive.png'),
+                dpi=300, bbox_inches='tight')
+    plt.show()
+
+
 def create_speed_benchmark_plot(results_df, output_dir, timeout):
     """Create professional benchmark visualization"""
     

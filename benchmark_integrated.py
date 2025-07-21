@@ -326,8 +326,6 @@ def sort_csv_by_toa(data_path: str, toa_column: str = "TOA(ns)") -> None:
     except Exception as e:
         print(f"❌ Error while sorting CSV: {e}")
 
-
-
 def batch_data_by_emitters_fixed_samples(
     data_path: str,
     num_emitters: int,
@@ -795,6 +793,10 @@ def run_benchmark_with_visualization_batched(
 
             true_labels = df['EmitterId'].to_numpy()
             
+            emitter_col = "EmitterId"
+            if emitter_col not in df.columns:
+                raise ValueError(f"Column '{emitter_col}' not found in DataFrame")
+            num_emitters = int(df[emitter_col].nunique())
             # Clear df early to free memory
             del df
             gc.collect()
@@ -880,6 +882,7 @@ def run_benchmark_with_visualization_batched(
             result = {
                 'Batch': batch_name,
                 'Samples': n_samples,
+                'Emitters':    num_emitters,
                 'GPU_Time': gpu_time,
                 'Sklearn_Time': sklearn_time,
                 'DBSCAN_Time': dbscan_time,
@@ -887,8 +890,14 @@ def run_benchmark_with_visualization_batched(
                 'Sklearn_Memory': sklearn_memory,
                 'DBSCAN_Memory': dbscan_memory,
                 'GPU_Clusters': eval_results['gpu_metrics']['N_Clusters'] if gpu_labels is not None and not gpu_timeout else None,
+                'GPU_Correct_Clusters': eval_results['gpu_metrics']['detailed_quality']['summary']['n_correct_clusters'] if gpu_labels is not None and not gpu_timeout else None,
+                'GPU_Incorrect_Clusters': eval_results['gpu_metrics']['detailed_quality']['summary']['n_incorrect_clusters'] if gpu_labels is not None and not gpu_timeout else None,
                 'Sklearn_Clusters': eval_results['sklearn_metrics']['N_Clusters'] if sklearn_labels is not None and not sklearn_timeout else None,
+                'Sklearn_Correct_Clusters': eval_results['sklearn_metrics']['detailed_quality']['summary']['n_correct_clusters'] if sklearn_labels is not None and not sklearn_timeout else None,
+                'Sklearn_Incorrect_Clusters': eval_results['sklearn_metrics']['detailed_quality']['summary']['n_incorrect_clusters'] if sklearn_labels is not None and not sklearn_timeout else None,
                 'DBSCAN_Clusters': eval_results['dbscan_metrics']['N_Clusters'] if dbscan_labels is not None and not dbscan_timeout else None,
+                'DBSCAN_Correct_Clusters': eval_results['dbscan_metrics']['detailed_quality']['summary']['n_correct_clusters'] if dbscan_labels is not None and not dbscan_timeout else None,
+                'DBSCAN_Incorrect_Clusters': eval_results['dbscan_metrics']['detailed_quality']['summary']['n_incorrect_clusters'] if dbscan_labels is not None and not dbscan_timeout else None,
                 'True_Clusters': eval_results['ground_truth_stats']['N_True_Clusters'],
                 # Add accuracy metrics
                 'GPU_ARI': eval_results['gpu_metrics']['ARI'],
@@ -928,6 +937,8 @@ def run_benchmark_with_visualization_batched(
     
     # save detailed summary
     results_df = pd.DataFrame(results)
+    output_dir = "speed_benchmark_outputs_new_metrics"
+    create_speed_benchmark_plot_new_metrics(results_df,output_dir,timeout)
     results_df.to_csv(os.path.join(output_dir, 'batch_benchmark_summary_with_accuracy.csv'), index=False)
     
     # Create overall summary - UPDATED TO INCLUDE DBSCAN
@@ -1169,8 +1180,7 @@ if __name__ == "__main__":
     use_lat_lng = False
     add_jitter = True
     add_jitter_n_noise = False
-    batch_by_num_emitters = False 
-    batch_by_emitter_n_toa = True
+    batch_by_num_emitters = True
 
     data_path = "./data/pdwInterns_with_latlng.csv"
     batch_path = "./data/batch_data"
@@ -1216,27 +1226,6 @@ if __name__ == "__main__":
             if batch_by_num_emitters:
                 emitters_per_batch = [10,20,30,40,50,60,70,80,90,100]
                 data = batch_data_by_emitters(data_path=noisy_data_path, emitters_per_batch_list = emitters_per_batch, assume_sorted = True)
-            elif batch_by_emitter_n_toa:
-
-                emitters_per_batch = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-
-                # Target batch output folder
-                batch_path = './data/batch_data_jitter_by_emitter_n_time'
-                os.makedirs(batch_path, exist_ok=True)  # Create if it doesn't exist
-
-                max_samples = 200000
-
-                for num_emitters in emitters_per_batch:
-                    output_filename = f"batched_{num_emitters}_emitters_total_{max_samples}_samples.csv"
-                    output_path = os.path.join(batch_path, output_filename)
-                    
-                    batch_data_by_emitters_fixed_samples(
-                        data_path="./data/noisy_pdwInterns_with_latlng.csv",
-                        num_emitters=num_emitters,
-                        max_samples=200000,
-                        output_path=output_path
-                    )
-
             else:# Chunk size can be taken as the maximum number of points in a batch
                 data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 

@@ -191,8 +191,10 @@ def evaluate_cluster_quality_detailed(predicted_labels: np.ndarray, true_labels:
             # Emitter perspective summary
             'n_perfectly_separated_emitters': len(emitter_analysis['perfectly_separated']),
             'n_broken_up_emitters': len(emitter_analysis['broken_up_emitters']),
+            'n_correct_clusters': len(emitter_analysis['perfectly_separated']) + len(emitter_analysis['broken_up_emitters']),
             'n_missing_emitters': len(emitter_analysis['missing_clusters']),
             'n_incorrectly_merged_emitters': len(emitter_analysis['incorrectly_merged']),
+            'n_incorrect_clusters': len(emitter_analysis['incorrectly_merged']) + len(emitter_analysis['missing_clusters']),
             # Cluster perspective summary
             'n_pure_clusters': len(cluster_analysis['pure_clusters']),
             'n_broken_up_clusters': len(cluster_analysis['broken_up_clusters']),
