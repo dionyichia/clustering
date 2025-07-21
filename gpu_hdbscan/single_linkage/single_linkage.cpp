@@ -79,8 +79,8 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
     }
     relabel[root_node] = next_label++;
     
-    std::cout << "[DEBUG] Starting condense tree with min_cluster_size: " << min_cluster_size << "\n";
-    std::cout << "[DEBUG] Root node: " << root_node << ", relabeled to: " << relabel[root_node] << "\n";
+ //   std::cout << "[DEBUG] Starting condense tree with min_cluster_size: " << min_cluster_size << "\n";
+  //  std::cout << "[DEBUG] Root node: " << root_node << ", relabeled to: " << relabel[root_node] << "\n";
     
     // Process nodes in BFS order
     for (int node : node_list) {
@@ -104,9 +104,9 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
         int left_count = (left >= n_samples) ? sz[left] : 1;
         int right_count = (right >= n_samples) ? sz[right] : 1;
         
-        std::cout << "[DEBUG] Processing node " << node << " (relabeled: " << relabel[node] 
-                << ") with children " << left << "(" << left_count << ") and " 
-                << right << "(" << right_count << ")\n";
+    //    std::cout << "[DEBUG] Processing node " << node << " (relabeled: " << relabel[node] 
+      //          << ") with children " << left << "(" << left_count << ") and " 
+       //         << right << "(" << right_count << ")\n";
         
         // Case 1: Both children are large enough clusters
         if (left_count >= min_cluster_size && right_count >= min_cluster_size) {
@@ -117,7 +117,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
             relabel[right] = next_label++;
             condensed_tree.emplace_back(relabel[node], relabel[right], lambda_value, right_count);
             
-            std::cout << "[DEBUG] Both children large enough - created condensed nodes\n";
+        //    std::cout << "[DEBUG] Both children large enough - created condensed nodes\n";
         }
         // Case 2: Both children are too small
         else if (left_count < min_cluster_size && right_count < min_cluster_size) {
@@ -142,7 +142,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                 ignore[leaf] = true;
             }
             
-            std::cout << "[DEBUG] Both children too small - added leaf nodes directly\n";
+          //  std::cout << "[DEBUG] Both children too small - added leaf nodes directly\n";
         }
         // if only one child is big enough, don't make a new cluster
         // it would just be the parent cluster shrinking into a smaller cluster 
@@ -162,7 +162,7 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                 ignore[leaf] = true;
             }
             
-            std::cout << "[DEBUG] Left child too small - right inherits parent label\n";
+     //       std::cout << "[DEBUG] Left child too small - right inherits parent label\n";
         }
         // Case 4: Right child too small, left child large enough
         else {
@@ -180,11 +180,11 @@ std::vector<CondensedNode> condense_tree(const std::vector<int>& left_child,
                 ignore[leaf] = true;
             }
             
-            std::cout << "[DEBUG] Right child too small - left inherits parent label\n";
+     //       std::cout << "[DEBUG] Right child too small - left inherits parent label\n";
         }
     }
     
-    std::cout << "[DEBUG] Condensed tree has " << condensed_tree.size() << " nodes\n";
+   // std::cout << "[DEBUG] Condensed tree has " << condensed_tree.size() << " nodes\n";
     
     return condensed_tree;
 }
@@ -859,6 +859,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
             root_condensed_tree.end()
         );
     }
+
     // ====== STABILITY CALCULATION & CLUSTER EXTRACTION ======
     std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
     auto cluster_stability = calculate_cluster_stability(combined_condensed_tree);
