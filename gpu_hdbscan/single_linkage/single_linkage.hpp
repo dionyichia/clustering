@@ -47,6 +47,8 @@ std::map<int, ClusterStability> calculate_cluster_stability(
     const std::vector<CondensedNode>& condensed_tree
     );
 
+float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& condensed_tree, const std::map<int, ClusterStability>& cluster_stability);
+
 std::vector<int> bfs_descendants(int cluster_id, 
                                 const std::map<int, ClusterStability>& cluster_stability);
 

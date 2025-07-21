@@ -225,6 +225,140 @@ std::map<int, ClusterStability> calculate_cluster_stability(const std::vector<Co
     return cluster_stability;
 }
 
+// Function to calculate cluster selection epsilon using elbow method
+// Finds the first stabilization point in bottom-up traversal
+float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& condensed_tree,
+                                        const std::map<int, ClusterStability>& cluster_stability) {
+    
+    if (condensed_tree.empty()) {
+        std::cout << "[WARNING] Empty condensed tree, returning default epsilon\n";
+        return 0.0f;
+    }
+    
+    // Step 1: Collect all unique lambda values and sort them (bottom-up)
+    std::set<float> lambda_set;
+    for (const auto& node : condensed_tree) {
+        lambda_set.insert(node.lambda_val);
+    }
+    
+    std::vector<float> lambda_values(lambda_set.begin(), lambda_set.end());
+    std::sort(lambda_values.begin(), lambda_values.end()); // ascending order (bottom-up)
+    
+    if (lambda_values.size() < 3) {
+        std::cout << "[WARNING] Not enough lambda values for elbow detection, using median\n";
+        return lambda_values[lambda_values.size() / 2];
+    }
+    
+    // Step 2: Calculate cluster metrics at each lambda level
+    std::vector<float> cluster_counts;
+    std::vector<float> stability_changes;
+    
+    for (float lambda : lambda_values) {
+        // Count active clusters at this lambda level
+        std::set<int> active_clusters;
+        float total_stability = 0.0f;
+        
+        for (const auto& node : condensed_tree) {
+            if (node.lambda_val <= lambda) {
+                // This merge has happened, so child clusters exist
+                if (node.cluster_size > 1) {
+                    active_clusters.insert(node.child);
+                }
+                total_stability += node.lambda_val * node.cluster_size;
+            }
+        }
+        
+        cluster_counts.push_back(static_cast<float>(active_clusters.size()));
+        stability_changes.push_back(total_stability);
+        
+        // std::cout << "[DEBUG] Lambda: " << lambda 
+        //           << ", Active clusters: " << active_clusters.size() 
+        //           << ", Cumulative stability: " << total_stability << "\n";
+    }
+    
+    // Step 3: Calculate rate of change (first derivative)
+    std::vector<float> rate_of_change;
+    for (size_t i = 1; i < cluster_counts.size(); ++i) {
+        float delta_clusters = cluster_counts[i] - cluster_counts[i-1];
+        float delta_lambda = lambda_values[i] - lambda_values[i-1];
+        
+        if (delta_lambda > 0) {
+            rate_of_change.push_back(delta_clusters / delta_lambda);
+        } else {
+            rate_of_change.push_back(0.0f);
+        }
+    }
+    
+    // Step 4: Find elbow point using second derivative
+    std::vector<float> second_derivative;
+    for (size_t i = 1; i < rate_of_change.size(); ++i) {
+        float delta_rate = rate_of_change[i] - rate_of_change[i-1];
+        float delta_lambda = lambda_values[i+1] - lambda_values[i];
+        
+        if (delta_lambda > 0) {
+            second_derivative.push_back(delta_rate / delta_lambda);
+        } else {
+            second_derivative.push_back(0.0f);
+        }
+    }
+    
+    // Step 5: Find first stabilization point (first elbow from bottom-up)
+    // Look for the first point where the second derivative approaches zero
+    // after initial rapid change, indicating stabilization of small clusters
+    
+    float epsilon = lambda_values[0]; // default to smallest lambda
+    float min_second_deriv_threshold = 0.1f; // threshold for stabilization
+    bool found_initial_change = false;
+    
+    for (size_t i = 0; i < second_derivative.size(); ++i) {
+        float abs_second_deriv = std::abs(second_derivative[i]);
+        
+        std::cout << "[DEBUG] Index: " << i+2 
+                  << ", Lambda: " << lambda_values[i+2]
+                  << ", 2nd derivative: " << second_derivative[i] << "\n";
+        
+        // First, detect if we've seen significant change
+        if (!found_initial_change && abs_second_deriv > min_second_deriv_threshold) {
+            found_initial_change = true;
+            continue;
+        }
+        
+        // Then look for stabilization after initial change
+        if (found_initial_change && abs_second_deriv < min_second_deriv_threshold) {
+            epsilon = lambda_values[i+2]; // +2 because second derivative is offset by 2
+            std::cout << "[INFO] Elbow point detected at lambda: " << epsilon << "\n";
+            break;
+        }
+    }
+    
+    // Alternative approach: If no clear elbow, use cluster count stabilization
+    if (epsilon == lambda_values[0] && lambda_values.size() > 5) {
+        std::cout << "[INFO] No clear elbow found, using cluster count stabilization\n";
+        
+        // Find where cluster count stops changing rapidly
+        for (size_t i = 2; i < cluster_counts.size() - 1; ++i) {
+            float prev_change = std::abs(cluster_counts[i] - cluster_counts[i-1]);
+            float next_change = std::abs(cluster_counts[i+1] - cluster_counts[i]);
+            
+            // If change is small and consistent, we've found stabilization
+            if (prev_change <= 1.0f && next_change <= 1.0f) {
+                epsilon = lambda_values[i];
+                std::cout << "[INFO] Cluster stabilization point at lambda: " << epsilon << "\n";
+                break;
+            }
+        }
+    }
+    
+    // Final fallback: use median if still no good epsilon found
+    if (epsilon == lambda_values[0]) {
+        epsilon = lambda_values[lambda_values.size() / 3]; // Use lower third instead of median
+        std::cout << "[INFO] Using fallback epsilon (lower third): " << epsilon << "\n";
+    }
+    
+    std::cout << "[RESULT] Selected cluster_selection_epsilon: " << epsilon << "\n";
+    return epsilon;
+}
+
 // BFS to find all descendants of a cluster
 std::vector<int> bfs_descendants(int cluster_id, 
                                 const std::map<int, ClusterStability>& cluster_stability) {
@@ -728,7 +862,10 @@ std::vector<std::vector<int>> single_linkage_clustering(
     // ====== STABILITY CALCULATION & CLUSTER EXTRACTION ======
     std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
     auto cluster_stability = calculate_cluster_stability(combined_condensed_tree);
-    
+
+    std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
+    cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
+
     std::cout << "=== CLUSTER EXTRACTION STEP ===" << std::endl;
     std::set<int> selected_clusters;
     switch(clusterMethod){
@@ -738,7 +875,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
             break;
         case clusterMethod::Leaf:
             std::cout << "=== CLUSTER METHOD SELECTED: LEAF ===" << std::endl;
-            selected_clusters = leaf_selection(combined_condensed_tree);
+            selected_clusters = leaf_selection(combined_condensed_tree, cluster_selection_epsilon=cluster_selection_epsilon);
             break;
         default:
             std::cout << "=== NO VALID CLUSTER METHOD SELECTED ===" << std::endl;

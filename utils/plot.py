@@ -183,21 +183,18 @@ GPU HDBSCAN:
 • Broken Up: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_broken_up_emitters'])}
 • Missing: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_missing_emitters'])}
 • Merged: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}
-• Total Emitters: {safe_get_nested(gpu_metrics, ['detailed_quality', 'summary', 'n_true_clusters'])}
 
 Sklearn HDBSCAN: 
 • Perfect: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated_emitters'])}
 • Broken Up: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_broken_up_emitters'])}
 • Missing: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_missing_emitters'])}
 • Merged: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}
-• Total Emitters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_true_clusters'])}
 
 DBSCAN:
 • Perfect: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_perfectly_separated_emitters'])}
 • Broken Up: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_broken_up_emitters'])}
 • Missing: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_missing_emitters'])}
-• Merged: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}
-• Total Emitters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_true_clusters'])}"""
+• Merged: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_incorrectly_merged_emitters'])}"""
     
     # Display the metrics text
     ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, ha='left', va='top',
