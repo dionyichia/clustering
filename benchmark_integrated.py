@@ -1169,7 +1169,8 @@ if __name__ == "__main__":
     use_lat_lng = False
     add_jitter = True
     add_jitter_n_noise = False
-    batch_by_num_emitters = True
+    batch_by_num_emitters = False 
+    batch_by_emitter_n_toa = True
 
     data_path = "./data/pdwInterns_with_latlng.csv"
     batch_path = "./data/batch_data"
@@ -1215,6 +1216,27 @@ if __name__ == "__main__":
             if batch_by_num_emitters:
                 emitters_per_batch = [10,20,30,40,50,60,70,80,90,100]
                 data = batch_data_by_emitters(data_path=noisy_data_path, emitters_per_batch_list = emitters_per_batch, assume_sorted = True)
+            elif batch_by_emitter_n_toa:
+
+                emitters_per_batch = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+                # Target batch output folder
+                batch_path = './data/batch_data_jitter_by_emitter_n_time'
+                os.makedirs(batch_path, exist_ok=True)  # Create if it doesn't exist
+
+                max_samples = 200000
+
+                for num_emitters in emitters_per_batch:
+                    output_filename = f"batched_{num_emitters}_emitters_total_{max_samples}_samples.csv"
+                    output_path = os.path.join(batch_path, output_filename)
+                    
+                    batch_data_by_emitters_fixed_samples(
+                        data_path="./data/noisy_pdwInterns_with_latlng.csv",
+                        num_emitters=num_emitters,
+                        max_samples=200000,
+                        output_path=output_path
+                    )
+
             else:# Chunk size can be taken as the maximum number of points in a batch
                 data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 

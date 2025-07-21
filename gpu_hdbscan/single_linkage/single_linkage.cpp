@@ -864,7 +864,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
     auto cluster_stability = calculate_cluster_stability(combined_condensed_tree);
 
     std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
-    cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
+    auto cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
 
     std::cout << "=== CLUSTER EXTRACTION STEP ===" << std::endl;
     std::set<int> selected_clusters;
