@@ -3,7 +3,7 @@ import numpy as np
 import time
 import psutil
 import os
-from typing import List, Dict,Tuple,Set
+from typing import List, Dict,Tuple,Set,Optional
 from sklearn.cluster import HDBSCAN,DBSCAN
 from sklearn.datasets import make_blobs, make_circles, make_moons
 from sklearn.preprocessing import StandardScaler
@@ -325,6 +325,77 @@ def sort_csv_by_toa(data_path: str, toa_column: str = "TOA(ns)") -> None:
 
     except Exception as e:
         print(f"❌ Error while sorting CSV: {e}")
+
+
+
+def batch_data_by_emitters_fixed_samples(
+    data_path: str,
+    num_emitters: int,
+    max_samples: int = 200_000,
+    toa_col: str = "TOA(ns)",
+    emitter_col: str = "EmitterId",
+    output_path: Optional[str] = None
+) -> str:
+    """
+    Extract up to `max_samples` points by evenly sampling from the first
+    `num_emitters` emitters (by order of appearance), taking the n = max_samples//num_emitters
+    smallest‐TOA points per emitter, then sorting the combined set by TOA.
+
+    Args:
+        data_path:    Path to the input CSV.
+        num_emitters: How many distinct emitters to include.
+        max_samples:  Total maximum points to return (default 200,000).
+        toa_col:      Column name for time‐of‐arrival.
+        emitter_col:  Column name for emitter IDs.
+        output_path:  Where to save the output CSV. If None, saves alongside
+                      the input file as batch_{num_emitters}_{max_samples}.csv.
+
+    Returns:
+        The path to the newly created CSV.
+    """
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"No such file: {data_path}")
+
+    # Load
+    df = pd.read_csv(data_path)
+    if emitter_col not in df.columns or toa_col not in df.columns:
+        raise ValueError(f"Missing required column(s): {emitter_col}, {toa_col}")
+
+    # Determine which emitters to use (first appearance)
+    unique_emitters = df[emitter_col].drop_duplicates().tolist()
+    if num_emitters > len(unique_emitters):
+        raise ValueError(f"Requested {num_emitters} emitters but only "
+                         f"{len(unique_emitters)} available.")
+    selected = unique_emitters[:num_emitters]
+
+    # How many samples per emitter?
+    per_emitter = max_samples // num_emitters
+    if per_emitter < 1:
+        raise ValueError(f"max_samples ({max_samples}) too small for "
+                         f"{num_emitters} emitters (need at least {num_emitters}).")
+
+    # For each emitter, grab its per_emitter smallest TOA rows
+    batches = []
+    for eid in selected:
+        sub = df[df[emitter_col] == eid]
+        # sort just this emitter by TOA and take the first n
+        topn = sub.nsmallest(per_emitter, columns=toa_col)
+        batches.append(topn)
+
+    # Combine and sort globally by TOA
+    result = pd.concat(batches, ignore_index=True)
+    result = result.sort_values(toa_col).reset_index(drop=True)
+
+    # Decide output path
+    if output_path is None:
+        base, _ = os.path.splitext(os.path.basename(data_path))
+        output_filename = f"{base}_batch_{num_emitters}emitters_{max_samples}samples.csv"
+        output_path = os.path.join(os.path.dirname(data_path), output_filename)
+
+    # Save
+    result.to_csv(output_path, index=False)
+    return output_path
+
 
 def batch_data_by_emitters(data_path: str, emitters_per_batch_list: List[int] = None, 
                           assume_sorted: bool = True) -> List[Dict[str, any]]:
