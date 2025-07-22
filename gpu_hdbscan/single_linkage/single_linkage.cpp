@@ -238,7 +238,9 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
     // Step 1: Collect all unique lambda values and sort them (bottom-up)
     std::set<float> lambda_set;
     for (const auto& node : condensed_tree) {
-        lambda_set.insert(node.lambda_val);
+        if (node.cluster_size != 1) {
+            lambda_set.insert(node.lambda_val);
+        }
     }
     
     std::vector<float> lambda_values(lambda_set.begin(), lambda_set.end());
@@ -251,12 +253,10 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
     
     // Step 2: Calculate cluster metrics at each lambda level
     std::vector<float> cluster_counts;
-    std::vector<float> stability_changes;
     
     for (float lambda : lambda_values) {
         // Count active clusters at this lambda level
         std::set<int> active_clusters;
-        float total_stability = 0.0f;
         
         for (const auto& node : condensed_tree) {
             if (node.lambda_val <= lambda) {
@@ -264,12 +264,10 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
                 if (node.cluster_size > 1) {
                     active_clusters.insert(node.child);
                 }
-                total_stability += node.lambda_val * node.cluster_size;
             }
         }
         
         cluster_counts.push_back(static_cast<float>(active_clusters.size()));
-        stability_changes.push_back(total_stability);
         
         // std::cout << "[DEBUG] Lambda: " << lambda 
         //           << ", Active clusters: " << active_clusters.size() 
@@ -332,28 +330,28 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
     }
     
     // Alternative approach: If no clear elbow, use cluster count stabilization
-    if (epsilon == lambda_values[0] && lambda_values.size() > 5) {
-        std::cout << "[INFO] No clear elbow found, using cluster count stabilization\n";
+    // if (epsilon == lambda_values[0] && lambda_values.size() > 5) {
+    //     std::cout << "[INFO] No clear elbow found, using cluster count stabilization\n";
         
-        // Find where cluster count stops changing rapidly
-        for (size_t i = 2; i < cluster_counts.size() - 1; ++i) {
-            float prev_change = std::abs(cluster_counts[i] - cluster_counts[i-1]);
-            float next_change = std::abs(cluster_counts[i+1] - cluster_counts[i]);
+    //     // Find where cluster count stops changing rapidly
+    //     for (size_t i = 2; i < cluster_counts.size() - 1; ++i) {
+    //         float prev_change = std::abs(cluster_counts[i] - cluster_counts[i-1]);
+    //         float next_change = std::abs(cluster_counts[i+1] - cluster_counts[i]);
             
-            // If change is small and consistent, we've found stabilization
-            if (prev_change <= 1.0f && next_change <= 1.0f) {
-                epsilon = lambda_values[i];
-                std::cout << "[INFO] Cluster stabilization point at lambda: " << epsilon << "\n";
-                break;
-            }
-        }
-    }
+    //         // If change is small and consistent, we've found stabilization
+    //         if (prev_change <= 1.0f && next_change <= 1.0f) {
+    //             epsilon = lambda_values[i];
+    //             std::cout << "[INFO] Cluster stabilization point at lambda: " << epsilon << "\n";
+    //             break;
+    //         }
+    //     }
+    // }
     
-    // Final fallback: use median if still no good epsilon found
-    if (epsilon == lambda_values[0]) {
-        epsilon = lambda_values[lambda_values.size() / 3]; // Use lower third instead of median
-        std::cout << "[INFO] Using fallback epsilon (lower third): " << epsilon << "\n";
-    }
+    // // Final fallback: use median if still no good epsilon found
+    // if (epsilon == lambda_values[0]) {
+    //     epsilon = lambda_values[lambda_values.size() / 3]; // Use lower third instead of median
+    //     std::cout << "[INFO] Using fallback epsilon (lower third): " << epsilon << "\n";
+    // }
     
     std::cout << "[RESULT] Selected cluster_selection_epsilon: " << epsilon << "\n";
     return epsilon;
@@ -1114,7 +1112,7 @@ std::vector<std::vector<int>> single_linkage_clustering(
                     std::cout << "\n=== CALCULATING OPTIMAL CLUSTER SELECTION EPSILON ===" << std::endl;
                     
                     auto epsilon_start = std::chrono::high_resolution_clock::now();
-                    cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
+                    cluster_selection_epsilon = 1.0 / calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
                     auto epsilon_end = std::chrono::high_resolution_clock::now();
                     auto epsilon_duration = std::chrono::duration_cast<std::chrono::milliseconds>(epsilon_end - epsilon_start);
                     std::cout << "[PROFILE] Epsilon calculation took: " << epsilon_duration.count() << " ms" << std::endl;
