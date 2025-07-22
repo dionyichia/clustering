@@ -251,8 +251,7 @@ GPU HDBSCAN
 
 • Time: {safe_format(gpu_metrics['time'] if gpu_metrics else None)}
 • Memory: {safe_format(gpu_metrics['mem'] if gpu_metrics else None)}
-• Homogeneity: {safe_format(gpu_metrics['Homogeneity'] if gpu_metrics else None)}
-• V-Measure: {safe_format(gpu_metrics['V_Measure'] if gpu_metrics else None)}
+• Noise Points: {safe_format(gpu_metrics['N_Noise'] if gpu_metrics else None, "{}", "N/A")}
 
 Sklearn HDBSCAN:
 • Total Clusters: {safe_get_nested(sklearn_metrics, ['detailed_quality', 'summary', 'n_predicted_clusters'])}
@@ -263,8 +262,7 @@ Sklearn HDBSCAN:
 
 • Time: {safe_format(sklearn_metrics['time'] if sklearn_metrics else None)}
 • Memory: {safe_format(sklearn_metrics['mem'] if sklearn_metrics else None)}
-• Homogeneity: {safe_format(sklearn_metrics['Homogeneity'] if sklearn_metrics else None)}
-• V-Measure: {safe_format(sklearn_metrics['V_Measure'] if sklearn_metrics else None)}
+• Noise Points: {safe_format(sklearn_metrics['N_Noise'] if gpu_metrics else None, "{}", "N/A")}
 
 DBSCAN:
 • Total Clusters: {safe_get_nested(dbscan_metrics, ['detailed_quality', 'summary', 'n_predicted_clusters'])}
@@ -275,8 +273,7 @@ DBSCAN:
 
 • Time: {safe_format(dbscan_metrics['time'] if dbscan_metrics else None)}
 • Memory: {safe_format(dbscan_metrics['mem'] if dbscan_metrics else None)}
-• Homogeneity: {safe_format(dbscan_metrics['Homogeneity'] if dbscan_metrics else None)}
-• V-Measure: {safe_format(dbscan_metrics['V_Measure'] if dbscan_metrics else None)}"""
+• Noise Points: {safe_format(dbscan_metrics['N_Noise'] if gpu_metrics else None, "{}", "N/A")}"""
     
     # Display the metrics text
     ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, ha='left', va='top',
