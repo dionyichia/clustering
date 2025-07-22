@@ -750,16 +750,18 @@ def run_benchmark_with_visualization_batched(
         log_memory_usage("start of batch")
         
         if batch_filename not in dbscan_params:
-            print(f"No parameters found for {batch_filename}, skipping...")
-            continue
-        
-        min_samples, epsilon = dbscan_params[batch_filename]
+            print(f"No DBSCAN parameters found for {batch_filename}, skipping...")
+            
+            min_samples = 5
+            epsilon = 0.38
+        else:
+            min_samples, epsilon = dbscan_params[batch_filename]
 
         # count data rows (minus header)
         with open(csv_file, 'r') as f:
             n_samples = sum(1 for _ in f) - 1
         
-        print(f"  Processing {n_samples} rows")
+        print(f"Processing {n_samples} rows")
         
         try:
             # Read data in a try-except block to handle memory issues
@@ -1212,6 +1214,8 @@ if __name__ == "__main__":
 
             if batch_by_num_emitters:
                 batch_path = "./data/batch_data_jitter_by_emitters"
+            elif:
+                batch_path = './data/batch_data_jitter_by_emitter_n_time'
             else:
                 batch_path = "./data/batch_data_jitter"
             
@@ -1232,8 +1236,6 @@ if __name__ == "__main__":
 
                 emitters_per_batch = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
-                # Target batch output folder
-                batch_path = './data/batch_data_jitter_by_emitter_n_time'
                 os.makedirs(batch_path, exist_ok=True)  # Create if it doesn't exist
 
                 max_samples = 200000
