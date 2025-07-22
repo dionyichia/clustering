@@ -1236,6 +1236,8 @@ if __name__ == "__main__":
 
                 emitters_per_batch = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
+                # Target batch output folder
+                batch_path = './data/batch_data_jitter_by_emitter_n_time'
                 os.makedirs(batch_path, exist_ok=True)  # Create if it doesn't exist
 
                 max_samples = 200000
