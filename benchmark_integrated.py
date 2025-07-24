@@ -879,6 +879,40 @@ def run_benchmark_with_visualization_batched(
                 gpu_mem=gpu_mem, sklearn_mem=sklearn_memory, dbscan_mem=dbscan_memory, save_dir=output_dir
             )
             evaluation_results.append(eval_results)
+
+            # Create labels DataFrame with original features for visualization
+            if 'Data_Batch_4' in batch_name:
+                labels_df = pd.DataFrame(X, columns=feature_cols)
+                labels_df['True_Labels'] = true_labels
+
+                # Add algorithm labels (handle None/timeout cases)
+                if gpu_labels is not None and not gpu_timeout:
+                    labels_df['GPU_HDBSCAN_Labels'] = gpu_labels
+                else:
+                    labels_df['GPU_HDBSCAN_Labels'] = -1  # or np.nan
+
+                if sklearn_labels is not None and not sklearn_timeout:
+                    labels_df['Sklearn_HDBSCAN_Labels'] = sklearn_labels
+                else:
+                    labels_df['Sklearn_HDBSCAN_Labels'] = -1  # or np.nan
+
+                if dbscan_labels is not None and not dbscan_timeout:
+                    labels_df['DBSCAN_Labels'] = dbscan_labels
+                else:
+                    labels_df['DBSCAN_Labels'] = -1  # or np.nan
+
+                # Add timing information for reference
+                labels_df['Start_Time'] = start_time
+                labels_df['End_Time'] = end_time
+
+                # Save to CSV
+                labels_output_path = os.path.join(output_dir, f"{batch_name}_labels.csv")
+                labels_df.to_csv(labels_output_path, index=False)
+                print(f"  -> Saved labels to: {labels_output_path}")
+
+                # Clean up the labels DataFrame
+                del labels_df
+                gc.collect()
             
             # collect performance results 
             result = {
@@ -1214,7 +1248,7 @@ if __name__ == "__main__":
 
             if batch_by_num_emitters:
                 batch_path = "./data/batch_data_jitter_by_emitters"
-            elif:
+            elif batch_by_emitter_n_toa:
                 batch_path = './data/batch_data_jitter_by_emitter_n_time'
             else:
                 batch_path = "./data/batch_data_jitter"
@@ -1222,8 +1256,16 @@ if __name__ == "__main__":
             if add_jitter_n_noise:
                 noisy_data_path = "./data/noisy_pdwInterns_with_latlng_n_random.csv"
                 batch_path = "./data/batch_data_noise"
+        else:
+            if batch_by_num_emitters:
+                batch_path = "./data/batch_data_no_jitter_by_emitters"
+            elif batch_by_emitter_n_toa:
+                batch_path = './data/batch_data_no_jitter_by_emitter_n_time'
+            else:
+                batch_path = "./data/batch_data_no_jitter"
+            
 
-        if not os.path.exists(noisy_data_path):
+        if add_jitter and not os.path.exists(noisy_data_path):
             print(f"Noisy Data not found at {noisy_data_path}")
             noisy_data_path = add_gaussian_noise(data_path, std_map=std_map)
         
@@ -1235,15 +1277,14 @@ if __name__ == "__main__":
             elif batch_by_emitter_n_toa:
 
                 emitters_per_batch = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+                emitter_list = enumerate(emitters_per_batch)
 
-                # Target batch output folder
-                batch_path = './data/batch_data_jitter_by_emitter_n_time'
                 os.makedirs(batch_path, exist_ok=True)  # Create if it doesn't exist
 
                 max_samples = 200000
 
-                for num_emitters in emitters_per_batch:
-                    output_filename = f"batched_{num_emitters}_emitters_total_{max_samples}_samples.csv"
+                for i, num_emitters in emitter_list:
+                    output_filename = f"Data_Batch_{i+1}_{num_emitters}_emitters_{max_samples}_samples.csv"
                     output_path = os.path.join(batch_path, output_filename)
                     
                     batch_data_by_emitters_fixed_samples(
@@ -1256,6 +1297,7 @@ if __name__ == "__main__":
             else:# Chunk size can be taken as the maximum number of points in a batch
                 data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
+        print("Using batch path: ", batch_path)
         results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
         print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
         print("Plots saved to 'gpu_hdbscan_benchmark.png'")
