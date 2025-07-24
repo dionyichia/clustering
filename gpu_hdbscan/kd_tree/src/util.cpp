@@ -219,3 +219,49 @@ void printUsage(char* prog) {
     std::cerr << "  --quiet, -q             Suppress debug output\n";
     std::cerr << "  --help, -h              Show this help message\n";
 }
+
+// Compute normalized inverse standard deviation weights
+std::vector<double> computeNormalizedInverseStdDevWeights(const std::vector<Point>& points) {
+    if (points.empty()) throw std::invalid_argument("Points cannot be empty.");
+    const size_t D = points[0].size();
+    const size_t N = points.size();
+
+    std::vector<double> means(D, 0.0);
+    std::vector<double> stds(D, 0.0);
+    
+    // Step 1: Compute mean per dimension
+    for (const Point& p : points) {
+        for (size_t d = 0; d < D; ++d) {
+            means[d] += p[d];
+        }
+    }
+    for (size_t d = 0; d < D; ++d) {
+        means[d] /= N;
+    }
+
+    // Step 2: Compute std deviation per dimension
+    for (const Point& p : points) {
+        for (size_t d = 0; d < D; ++d) {
+            double diff = p[d] - means[d];
+            stds[d] += diff * diff;
+        }
+    }
+    for (size_t d = 0; d < D; ++d) {
+        stds[d] = std::sqrt(stds[d] / N);
+    }
+
+    // Step 3: Compute inverse std and normalize
+    std::vector<double> inv_std(D, 0.0);
+    double sum = 0.0;
+    for (size_t d = 0; d < D; ++d) {
+        if (stds[d] == 0.0) throw std::runtime_error("Standard deviation is zero in dimension.");
+        inv_std[d] = 1.0 / stds[d];
+        sum += inv_std[d];
+    }
+
+    for (size_t d = 0; d < D; ++d) {
+        inv_std[d] /= sum;  // normalize so weights sum to 1
+    }
+
+    return inv_std;
+}

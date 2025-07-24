@@ -19,7 +19,8 @@ double distance(
   const Point& a,
   const Point& b,
   DistanceMetric metric,
-  float p = 2.0f
+  float p = 2.0f,
+  const std::vector<double>* weights = nullptr
 );
 
 /// Convert enum to text

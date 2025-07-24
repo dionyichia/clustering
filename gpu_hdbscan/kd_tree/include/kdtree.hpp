@@ -31,7 +31,8 @@ void queryKNN(
   std::priority_queue<std::pair<double,int>>& heap,
   const std::vector<Point>& points,
   DistanceMetric metric,
-  float p
+  float p,
+  const std::vector<double>*                     weights = nullptr
 );
 
 // Replace tuple of each k-nn to every point with MRD instead of distance to point
