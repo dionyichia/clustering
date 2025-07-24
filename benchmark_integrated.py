@@ -709,7 +709,7 @@ def run_benchmark_with_visualization_batched(
     gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
     # Test parameters
-    min_samples = 3
+    min_samples = 5
     min_cluster_size = 20
     quiet_mode = True
     timeout = 5 * 60  # 5 minute timeout 

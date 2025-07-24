@@ -383,7 +383,7 @@ std::vector<int> bfs_descendants(int cluster_id,
 
 // Excess of Mass cluster selection (like sklearn)
 std::set<int> excess_of_mass_selection(std::map<int, ClusterStability>& cluster_stability,
-                                      int max_cluster_size) {
+                                    int max_cluster_size) {
     
     // Get clusters in reverse topological order (largest IDs first)
     std::vector<int> node_list;
@@ -715,189 +715,6 @@ std::vector<std::vector<int>> do_labelling_with_clusters(
     return clusters;
 }
 
-// std::vector<std::vector<int>> single_linkage_clustering(
-//     const std::vector<Edge>& mst_edges,
-//     int N_pts,
-//     int min_cluster_size,
-//     clusterMethod clusterMethod
-// )
-// {
-//     std::cout << "\n=== Running Single Linkage Clustering ===" << std::endl;
-
-//     // ====== CLUSTER HIERARCHY TREE  ======
-//     // Make a copy of mst_edges for sorting
-//     std::vector<Edge> edges_copy = mst_edges;
-//     assert(!edges_copy.empty());
-    
-//     std::sort(edges_copy.begin(), edges_copy.end(), [](const Edge& a, const Edge& b) {
-//         return a.weight < b.weight;
-//     });
-
-//     for (auto &e : edges_copy) {
-//     assert(e.u >= 0 && e.u < N_pts);
-//     assert(e.v >= 0 && e.v < N_pts);
-//     assert(e.weight > 0);
-//     }
-//     std::cout << "[DEBUG] Edge assertions passed.\n";
-
-//     int max_clusters = 2 * N_pts;
-//     std::vector<int> parent(max_clusters), sz(max_clusters);
-//     std::vector<float> birth_lambda(max_clusters), death_lambda(max_clusters);
-//     std::vector<int> left_child(max_clusters, -1), right_child(max_clusters, -1);
-    
-//     // Guard against zero-length edges
-//     float smallest_weight = edges_copy.front().weight;
-//     float largest_weight = edges_copy.back().weight;  
-//     std::cout << "[DEBUG] Raw smallest weight: " << smallest_weight << "\n";
-//     std::cout << "[DEBUG] Raw largest weight: " << largest_weight << "\n"; 
-//     if (smallest_weight <= 0.f) {
-//         smallest_weight = std::numeric_limits<float>::min();
-//         std::cout << "[DEBUG] Adjusted smallest weight to epsilon: " << smallest_weight << "\n";
-//     }
-
-//     // Compute lambda_max as the inverse of smallest_mrd
-//     float lambda_max = 1.f / smallest_weight;
-//     float lambda_min = 1.f / largest_weight;  
-    
-//     std::cout << "[DEBUG] lambda_max: " << lambda_max << "\n";
-    
-//     // initialise all points as singleton clusters //
-//     for(int i = 0; i < N_pts; ++i){
-//         parent[i] = i;
-//         sz[i] = 1;
-//         birth_lambda[i] = lambda_max;
-//         death_lambda[i] = 0;
-//     }
-//     int next_cluster_id = N_pts;
-
-//     std::cout << "[DEBUG] Initialized " << next_cluster_id << " singleton clusters\n";
-
-//     // lambda to find root (path-compressed):
-//     auto find_root = [&](int x){
-//         int root = x;
-//         while(parent[root] != root) root = parent[root];
-//         while(parent[x] != root){
-//             int next = parent[x];
-//             parent[x] = root;
-//             x = next;
-//         }
-//         return root;
-//     };
-
-//     // === HIERARCHY BUILDING ===
-//     std::cout << "\n=== HIERARCHY BUILDING ===" << std::endl;
-//     for(int edge_idx = 0; edge_idx < edges_copy.size(); ++edge_idx) {
-//         auto &e = edges_copy[edge_idx];
-        
-//         // if nodes are already in the same cluster, continue
-//         int c1 = find_root(e.u), c2 = find_root(e.v);
-//         if(c1 == c2) continue;
-
-//         // lambda = 1 / MRD - decrease from lambda = infinity to lambda = 0
-//         float lambda = 1.f / e.weight;
-            
-//         // Set death lambda and record stability
-//         death_lambda[c1] = lambda;
-//         death_lambda[c2] = lambda;
-
-//         // make new cluster
-//         int c_new = next_cluster_id++;
-//         parent[c1] = parent[c2] = c_new;
-//         parent[c_new] = c_new;
-//         sz[c_new]           = sz[c1] + sz[c2];
-//         birth_lambda[c_new] = lambda;
-//         death_lambda[c_new] = 0;
-//         left_child[c_new]   = c1;
-//         right_child[c_new]  = c2;
-//     }
-
-
-//     // 2N-1 clusters since there will be N-1 merges from N-1 edges
-//     std::cout << "[DEBUG] Total clusters created: " << next_cluster_id << "\n";
-
-//     // Identify Root Clusters (Disjoint Connected Components)
-//     std::vector<int> root_clusters;
-//     for(int c = 0; c < next_cluster_id; ++c) {
-//         if(parent[c] == c) {  // This is a root cluster
-//             root_clusters.push_back(c);
-//         }
-//     }
-
-//     int num_connected_components = root_clusters.size();
-//     std::cout << "[DEBUG] Found " << num_connected_components << " connected components (roots): ";
-//     for(int root : root_clusters) {
-//         std::cout << root << " ";
-//     }
-//     std::cout << std::endl;
-    
-//     // ====== CONDENSE TREE FOR MULTIPLE ROOT NODES ======
-//     std::cout << "\n=== CONDENSE TREE STEP ===" << std::endl;
-//     // Initialize combined condensed tree
-//     std::vector<CondensedNode> combined_condensed_tree;
-
-//     // Global label counter to avoid collisions across multiple roots
-//     int next_label = 0;
-
-//     // Process each root cluster separately
-//     for(int root_node : root_clusters) {
-//         // Call condense_tree for this specific root
-//         std::cout << "[DEBUG] Root node for condensing: " << root_node << "\n";
-//         std::vector<CondensedNode> root_condensed_tree = condense_tree(
-//             left_child, right_child, birth_lambda, death_lambda, sz, 
-//             N_pts, root_node,next_label,min_cluster_size
-//         );
-        
-//         // Append this root's condensed tree to the combined tree
-//         combined_condensed_tree.insert(
-//             combined_condensed_tree.end(), 
-//             root_condensed_tree.begin(), 
-//             root_condensed_tree.end()
-//         );
-//     }
-
-//     // ====== STABILITY CALCULATION & CLUSTER EXTRACTION ======
-//     std::cout << "\n=== STABILITY CALCULATION ===" << std::endl;
-//     auto cluster_stability = calculate_cluster_stability(combined_condensed_tree);
-//     std::cout << "=== CLUSTER EXTRACTION STEP ===" << std::endl;
-//     std::set<int> selected_clusters;
-//     float cluster_selection_epsilon;
-//     switch(clusterMethod){
-//         case clusterMethod::EOM:
-//             std::cout << "=== CLUSTER METHOD SELECTED: EXCESS OF MASS ===" << std::endl;
-//             selected_clusters = excess_of_mass_selection(cluster_stability);
-//             break;
-//         case clusterMethod::Leaf:
-//             std::cout << "=== CLUSTER METHOD SELECTED: LEAF ===" << std::endl;
-//             std::cout << "\n=== CALCULATING OPTIMAL CLUSTER SELECTION EPSILON ===" << std::endl;
-//             cluster_selection_epsilon = calculate_cluster_selection_epsilon(combined_condensed_tree, cluster_stability);
-//             selected_clusters = leaf_selection(combined_condensed_tree, cluster_selection_epsilon=cluster_selection_epsilon);
-//             break;
-//         default:
-//             std::cout << "=== NO VALID CLUSTER METHOD SELECTED ===" << std::endl;
-//             std::vector<std::vector<int>> fail;
-//             return fail;
-//     }
-    
-//     std::cout << "=== LABELLING CLUSTERS STEP ===" << std::endl;
-//     std::vector<std::vector<int>> final_clusters = do_labelling_with_clusters(combined_condensed_tree, selected_clusters, N_pts);
-//     std::cout << "\n=== FINAL CLUSTERING RESULT ===" << std::endl;
-//     std::cout << "Found " << final_clusters.size() << " clusters:\n";
-//     for (int i = 0; i < final_clusters.size(); ++i) {
-//         std::cout << "Cluster " << i << ": " << final_clusters[i].size() << " points\n";
-//         // Show first few points in each cluster
-//         std::cout << "  Points: ";
-//         for (int j = 0; j < std::min(10, (int)final_clusters[i].size()); ++j) {
-//             std::cout << final_clusters[i][j] << " ";
-//         }
-//         if (final_clusters[i].size() > 10) {
-//             std::cout << "... (+" << (final_clusters[i].size() - 10) << " more)";
-//         }
-//         std::cout << "\n";
-//     }
-
-//     return final_clusters;
-// }
-
 // Helper class for timing sections
 class SectionTimer {
 private:
@@ -1144,7 +961,6 @@ std::vector<std::vector<int>> single_linkage_clustering(
         std::cout << "\n=== FINAL CLUSTERING RESULT ===" << std::endl;
         std::cout << "[PROFILE] TOTAL EXECUTION TIME: " << total_duration.count() << " ms" << std::endl;
         std::cout << "Found " << final_clusters.size() << " clusters:\n";
-        
         for (int i = 0; i < final_clusters.size(); ++i) {
             std::cout << "Cluster " << i << ": " << final_clusters[i].size() << " points\n";
             // Show first few points in each cluster
