@@ -144,25 +144,3 @@ def make_single_linkage(mst):
         U.union(current_node_cluster, next_node_cluster)
     
     return single_linkage
-
-def _process_mst(min_spanning_tree):
-    """
-    Builds a single-linkage tree (SLT) from the provided minimum spanning tree
-    (MST). The MST is first sorted then processed by a custom Cython routine.
-
-    Parameters
-    ----------
-    min_spanning_tree : ndarray of shape (n_samples - 1,), dtype=MST_edge_dtype
-        The MST representation of the mutual-reachability graph. The MST is
-        represented as a collection of edges.
-
-    Returns
-    -------
-    single_linkage : ndarray of shape (n_samples - 1,), dtype=HIERARCHY_dtype
-        The single-linkage tree tree (dendrogram) built from the MST.
-    """
-    # Sort edges of the min_spanning_tree by weight
-    row_order = np.argsort(min_spanning_tree["distance"])
-    min_spanning_tree = min_spanning_tree[row_order]
-    # Convert edge list into standard hierarchical clustering format
-    return make_single_linkage(min_spanning_tree)

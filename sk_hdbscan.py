@@ -34,21 +34,30 @@ HDBSCAN: Hierarchical Density-Based Spatial Clustering
 
 from numbers import Integral, Real
 from warnings import warn
-
 import numpy as np
 from scipy.sparse import csgraph, issparse
 
-from ...base import BaseEstimator, ClusterMixin, _fit_context
-from ...metrics import pairwise_distances
-from ...metrics._dist_metrics import DistanceMetric
-from ...metrics.pairwise import _VALID_METRICS
-from ...neighbors import BallTree, KDTree, NearestNeighbors
-from ...utils._param_validation import Interval, StrOptions
-from ...utils.validation import (
-    _allclose_dense_sparse,
-    _assert_all_finite,
+# from ...base import BaseEstimator, ClusterMixin
+# from ...metrics import pairwise_distances
+# from ...metrics._dist_metrics import DistanceMetric
+# from ...metrics.pairwise import _VALID_METRICS
+# from ...neighbors import BallTree, KDTree, NearestNeighbors
+# from ...utils._param_validation import Interval, StrOptions
+# from ...utils.validation import (
+#     _allclose_dense_sparse,
+#     _assert_all_finite,
+#     validate_data,
+# )\
+
+from sklearn.base import BaseEstimator, ClusterMixin
+from sklearn.metrics import pairwise_distances
+from sklearn.neighbors import BallTree, KDTree, NearestNeighbors
+from sklearn.utils.validation import (
+    _allclose_dense_sparse,  # internal, but in Python
+    _assert_all_finite,      # internal, but in Python
     validate_data,
 )
+
 from ._linkage import (
     MST_edge_dtype,
     make_single_linkage,
@@ -686,10 +695,6 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
         self.store_centers = store_centers
         self.copy = copy
 
-    @_fit_context(
-        # HDBSCAN.metric is not validated yet
-        prefer_skip_nested_validation=False
-    )
     def fit(self, X, y=None):
         """Find clusters based on hierarchical density-based clustering.
 
