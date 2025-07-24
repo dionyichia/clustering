@@ -19,11 +19,23 @@ def load_knn_graph_cpp(filename):
             cpp_knn.append(neighbors)
     return cpp_knn
 
+def compareMRD(cpp_knn,mrd_graph,n_points):
+    for i in range(n_points):
+        cpp_nbrs = cpp_knn[i]
+        sk_nbrs = mrd_graph[i]
+
+    for (cpp_idx, cpp_d), (sk_idx, sk_d) in zip(cpp_nbrs, sk_nbrs):
+        if cpp_idx != sk_idx or not np.isclose(cpp_d, sk_d, atol=1e-6):
+            print(f"Mismatch in {os.path.basename(csv_file)} at point {i}:")
+            print(f"  CPP   : idx={cpp_idx}, dist={cpp_d}")
+            print(f"  SKL   : idx={sk_idx}, dist={sk_d}")
+
 n_neighbors = 5
 feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
 data_path = './data/batch_data_jitter_by_emitter_n_time'
 csv_paths = sorted(glob.glob(os.path.join(data_path, "*.csv")))
 cpp_csv_path = "knn_graph_output.csv"
+
 for csv_file in csv_paths:
     if os.path.basename(csv_file) == "Data_Batch_6_60_emitters_200000_samples.csv":
         print(f"Checking: {os.path.basename(csv_file)}")
@@ -55,13 +67,5 @@ for csv_file in csv_paths:
                 mrd = max(c_i, c_j, d_ij)
                 mrd_graph[i].append((j, mrd))
 
-        # 4. Compare
-        for i in range(len(X)):
-            cpp_nbrs = cpp_knn[i]
-            sk_nbrs = mrd_graph[i]
-
-            for (cpp_idx, cpp_d), (sk_idx, sk_d) in zip(cpp_nbrs, sk_nbrs):
-                if cpp_idx != sk_idx or not np.isclose(cpp_d, sk_d, atol=1e-6):
-                    print(f"Mismatch in {os.path.basename(csv_file)} at point {i}:")
-                    print(f"  CPP   : idx={cpp_idx}, dist={cpp_d}")
-                    print(f"  SKL   : idx={sk_idx}, dist={sk_d}")
+        # 4. Compare MRD
+        # compareMRD(cpp_knn,mrd_graph,len(X))
