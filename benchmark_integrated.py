@@ -833,7 +833,7 @@ def run_benchmark_with_visualization_batched(
                 gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
                     gpu_hdbscan.fit_predict_batched, 
                     csv_file,
-                    dims,
+                    dims,``
                     min_samples=min_samples,
                     min_cluster_size=min_cluster_size,
                     quiet_mode=quiet_mode,
@@ -850,7 +850,7 @@ def run_benchmark_with_visualization_batched(
                     sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
                 else:
                     sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size, cluster_selection_method='leaf')
-                    
+
                 sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = track_performance_with_timeout(
                     sklearn_model.fit_predict, X, timeout=timeout
                 )
