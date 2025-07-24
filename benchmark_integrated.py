@@ -694,6 +694,7 @@ def run_benchmark_with_visualization_batched(
     use_amp=False,
     use_toa=False,
     use_lat_lng=False,
+    use_leaf=False
 ):
     """Enhanced benchmark function with cluster visualization and memory management"""
     # Define output folder
@@ -817,15 +818,27 @@ def run_benchmark_with_visualization_batched(
             #     min_cluster_size=min_cluster_size,
             #     quiet_mode=quiet_mode
             # )
-            gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
-                gpu_hdbscan.fit_predict_batched, 
-                csv_file,
-                dims,
-                min_samples=min_samples,
-                min_cluster_size=min_cluster_size,
-                quiet_mode=quiet_mode,
-                timeout=timeout
-            )
+            if use_leaf:
+                gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
+                    gpu_hdbscan.fit_predict_batched, 
+                    csv_file,
+                    dims,
+                    min_samples=min_samples,
+                    min_cluster_size=min_cluster_size,
+                    cluster_method=2,
+                    quiet_mode=quiet_mode,
+                    timeout=timeout
+                )
+            else:
+                gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
+                    gpu_hdbscan.fit_predict_batched, 
+                    csv_file,
+                    dims,
+                    min_samples=min_samples,
+                    min_cluster_size=min_cluster_size,
+                    quiet_mode=quiet_mode,
+                    timeout=timeout
+                )
             log_memory_usage("after GPU HDBSCAN")
             
             # sklearn HDBSCAN for comparison
@@ -833,7 +846,11 @@ def run_benchmark_with_visualization_batched(
             if n_samples > 250000:
                 sklearn_model,sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = None,None, timeout, 0, True
             else:
-                sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+                if use_leaf:
+                    sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
+                else:
+                    sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size, cluster_selection_method='leaf')
+                    
                 sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = track_performance_with_timeout(
                     sklearn_model.fit_predict, X, timeout=timeout
                 )
@@ -1222,6 +1239,8 @@ if __name__ == "__main__":
     data_path = "./data/pdwInterns_with_latlng.csv"
     batch_path = "./data/batch_data"
 
+    use_leaf = False
+
     if not os.path.exists(data_path):
         print(f"Date file not found at {data_path}")
         exit(1)
@@ -1298,6 +1317,6 @@ if __name__ == "__main__":
                 data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
         print("Using batch path: ", batch_path)
-        results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng) 
+        results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng, use_leaf=use_leaf) 
         print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
         print("Plots saved to 'gpu_hdbscan_benchmark.png'")
