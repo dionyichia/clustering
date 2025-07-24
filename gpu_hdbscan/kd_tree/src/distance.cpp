@@ -8,7 +8,8 @@ double distance(
     const Point& a,
     const Point& b,
     DistanceMetric metric,
-    float p
+    float p,
+    const std::vector<double>* weights = nullptr
 ) {
     assert(a.size() == b.size());
     const size_t D = a.size();
@@ -18,7 +19,8 @@ double distance(
         double sum = 0.0;
         for (size_t i = 0; i < D; ++i) {
           double d = a[i] - b[i];
-          sum += d*d;
+          double w = weights ? (*weights)[i] : 1.0;
+          sum += w * d * d;
         }
         return sum;
       }
@@ -26,7 +28,9 @@ double distance(
       case DistanceMetric::Manhattan: {
         double sum = 0.0;
         for (size_t i = 0; i < D; ++i) {
-          sum += std::abs(a[i] - b[i]);
+          double d = std::abs(a[i] - b[i]);
+          double w = weights ? (*weights)[i] : 1.0;
+          sum += w * d;
         }
         return sum;
       }
@@ -34,7 +38,9 @@ double distance(
       case DistanceMetric::Chebyshev: {
         double mx = 0.0;
         for (size_t i = 0; i < D; ++i) {
-          mx = std::max(mx, std::abs(a[i] - b[i]));
+          double d = std::abs(a[i] - b[i]);
+          double w = weights ? (*weights)[i] : 1.0;
+          mx = std::max(mx, w * d);
         }
         return mx;
       }
@@ -44,7 +50,9 @@ double distance(
           throw std::invalid_argument("p must be > 0 for Minkowski");
         double sum = 0.0;
         for (size_t i = 0; i < D; ++i) {
-          sum += std::pow(std::abs(a[i] - b[i]), p);
+          double d = std::abs(a[i] - b[i]);
+          double w = weights ? (*weights)[i] : 1.0;
+          sum += std::pow(w * d, p);
         }
         return std::pow(sum, 1.0 / p);
       }
@@ -52,8 +60,9 @@ double distance(
       case DistanceMetric::DSO: {
         double sum = 0.0;
         for (size_t i = 0; i < D; ++i) {
-          double d = ((a[i] - b[i])/a[i]);
-          sum += d*d;
+          double d = ((a[i] - b[i]) / a[i]);
+          double w = weights ? (*weights)[i] : 1.0;
+          sum += w * d * d;
         }
         return sum;
       }

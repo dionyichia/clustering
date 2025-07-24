@@ -20,3 +20,5 @@ readPointsFromFile(const std::string& filename,
                    const std::set<int>& skip_columns);
 /// Print usage and warnings
 void printUsage(char* prog);
+
+std::vector<double> computeNormalizedInverseStdDevWeights(const std::vector<Point>& points);

@@ -1,4 +1,5 @@
 #include "kd_tree/include/kdtree.hpp"
+#include "kd_tree/include/distance.hpp"
 #include <algorithm>
 #include <utility>
 #include <cmath>        
@@ -63,7 +64,8 @@ void queryKNN(
     std::priority_queue<std::pair<double,int>>&    heap,
     const std::vector<Point>&                      points,
     DistanceMetric                                metric, 
-    float                                           p
+    float                                           p,
+    const std::vector<double>*                     weights  // NEW PARAM
 ) {
     if (!node) return;
 
@@ -73,7 +75,7 @@ void queryKNN(
     }
     else {
         double dist2;
-        dist2 = distance(query,node->point,metric,p);
+        dist2 = distance(query,node->point,metric,p,weights);
         // if heap is not full, add point to heap containing k-nn to point
         if (heap.size() < static_cast<size_t>(k)) {
             heap.emplace(dist2, node->index);
@@ -90,7 +92,7 @@ void queryKNN(
     const KDNode* nearChild = diff < 0 ? node->left.get() : node->right.get();
     const KDNode* farChild  = diff < 0 ? node->right.get(): node->left.get();
 
-    queryKNN(nearChild, query, query_idx, k, heap, points,metric,p);
+    queryKNN(nearChild, query, query_idx, k, heap, points,metric,p,weights);
     
     // only recurse into far child if heap is not filled
     // or distance from query to splitting axis is smaller than current furthest neighbour -> potentially close points on other side of axis
@@ -123,7 +125,7 @@ void queryKNN(
     }
     }
     if (shouldVisitFar) {
-    queryKNN(farChild, query, query_idx, k, heap, points,metric,p);
+    queryKNN(farChild, query, query_idx, k, heap, points,metric,p,weights);
     }
 }
 

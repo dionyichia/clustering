@@ -346,13 +346,15 @@ int main(int argc, char** argv) {
   std::vector<double> core_dist(points.size());
 
   auto root = buildKDTree(points);
+  std::vector<double> weights = computeNormalizedInverseStdDevWeights(points);
 
   for (int i = 0; i < N; ++i) {
       // 1) Prepare an empty max-heap
       std::priority_queue<std::pair<double,int>> heap;
 
       // 2) Query the tree for point i
-      queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP);
+      
+      queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP,&weights);
       if (heap.size() != minPts) {
             std::cerr << "ERROR: Heap size is " << heap.size() 
                     << " but expected " << minPts << " for point " << i << std::endl;

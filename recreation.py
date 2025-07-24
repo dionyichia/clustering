@@ -4,6 +4,76 @@ import csv
 import os
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+from scipy.spatial.distance import cdist
+
+
+def mst_from_data_matrix_python(raw_data, core_distances, alpha=1.0, dist_fn='euclidean'):
+    """
+    Construct the MST from mutual-reachability distances.
+    
+    Parameters
+    ----------
+    raw_data : ndarray of shape (n_samples, n_features)
+        Input array of data samples.
+    core_distances : ndarray of shape (n_samples,)
+        Core-distance for each sample.
+    alpha : float
+        Scaling factor for distance.
+    dist_fn : str or callable
+        Distance function (e.g., 'euclidean' or a custom function).
+    
+    Returns
+    -------
+    mst_edges : list of tuples
+        Each tuple is (source, target, distance) representing an MST edge.
+    """
+    n_samples, n_features = raw_data.shape
+
+    # Setup arrays
+    in_tree = np.zeros(n_samples, dtype=bool)
+    min_reachability = np.full(n_samples, np.inf)
+    current_sources = np.full(n_samples, -1, dtype=int)
+
+    mst_edges = []
+    current_node = 0
+
+    for _ in range(n_samples - 1):
+        in_tree[current_node] = True
+        current_node_core_dist = core_distances[current_node]
+
+        new_reachability = np.inf
+        source_node = current_node
+        new_node = -1
+
+        for j in range(n_samples):
+            if in_tree[j]:
+                continue
+
+            # Compute pairwise distance
+            pair_dist = np.linalg.norm(raw_data[current_node] - raw_data[j]) if dist_fn == 'euclidean' else dist_fn(raw_data[current_node], raw_data[j])
+            pair_dist /= alpha
+
+            next_node_core_dist = core_distances[j]
+            mutual_reachability = max(current_node_core_dist, next_node_core_dist, pair_dist)
+
+            if mutual_reachability < min_reachability[j]:
+                min_reachability[j] = mutual_reachability
+                current_sources[j] = current_node
+                if mutual_reachability < new_reachability:
+                    new_reachability = mutual_reachability
+                    source_node = current_node
+                    new_node = j
+            elif min_reachability[j] < new_reachability:
+                new_reachability = min_reachability[j]
+                source_node = current_sources[j]
+                new_node = j
+
+        assert new_node != -1, "No new node was added — graph may be disconnected or something is wrong."
+        mst_edges.append((source_node, new_node, new_reachability))
+        current_node = new_node
+
+    return mst_edges
+
 
 def load_knn_graph_cpp(filename):
     cpp_knn = []
@@ -55,17 +125,22 @@ for csv_file in csv_paths:
         # Core distances = distance to the kth neighbor
         core_distances = neighbors_distances[:, -1]
 
-        # Build MRD graph
-        n_samples = X.shape[0]
-        mrd_graph = [[] for _ in range(n_samples)]
+        # # === COMPARE MRD ===
+        # # Build MRD graph
+        # n_samples = X.shape[0]
+        # mrd_graph = [[] for _ in range(n_samples)]
 
-        for i in range(n_samples):
-            for j_idx, j in enumerate(neighbors_indices[i]):
-                d_ij = neighbors_distances[i][j_idx]
-                c_i = core_distances[i]
-                c_j = core_distances[j]
-                mrd = max(c_i, c_j, d_ij)
-                mrd_graph[i].append((j, mrd))
+        # for i in range(n_samples):
+        #     for j_idx, j in enumerate(neighbors_indices[i]):
+        #         d_ij = neighbors_distances[i][j_idx]
+        #         c_i = core_distances[i]
+        #         c_j = core_distances[j]
+        #         mrd = max(c_i, c_j, d_ij)
+        #         mrd_graph[i].append((j, mrd))
 
-        # 4. Compare MRD
+
         # compareMRD(cpp_knn,mrd_graph,len(X))
+
+        mst = mst_from_data_matrix_python(X, core_distances, alpha=1.0)
+        print(mst)
+
