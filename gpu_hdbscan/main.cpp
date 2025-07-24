@@ -22,6 +22,24 @@ bool quiet_mode = false;
 // Replace all std::cout statements with conditional output:
 #define DEBUG_PRINT(x) if (!quiet_mode) { std::cout << x; }
 
+// void writeKNNGraph(const std::string& filename,
+//                    const std::vector<std::vector<std::pair<int, double>>>& knn_graph) {
+//     std::ofstream out(filename);
+//     if (!out.is_open()) {
+//         std::cerr << "Failed to open file " << filename << " for writing\n";
+//         return;
+//     }
+
+//     for (int i = 0; i < knn_graph.size(); ++i) {
+//         out << i;  // query point index
+//         for (const auto& [nbr_idx, dist] : knn_graph[i]) {
+//             out << "," << nbr_idx << "," << dist;
+//         }
+//         out << "\n";
+//     }
+//     out.close();
+// }
+
 void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int total_points) {
     // Create label array initialized to -1 (noise)
     std::vector<int> labels(total_points, -1);
@@ -335,9 +353,11 @@ int main(int argc, char** argv) {
 
       // 2) Query the tree for point i
       queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP);
+      if (heap.size() != minPts) {
+            std::cerr << "ERROR: Heap size is " << heap.size() 
+                    << " but expected " << minPts << " for point " << i << std::endl;
+        }
       // 3) Extract neighbors (and record the core distance)
-      //    Since heap is max‐heap, after you pop minPts elements,
-      //    the last popped distance = core distance
       double d_k = 0;
       // 1) Record core‐distance before you empty the heap
       double coreDist = heap.top().first;
@@ -366,13 +386,12 @@ int main(int argc, char** argv) {
   if (!quiet_mode) {
         printAndVerifyCoreDists(points, core_dist, minPts, metric, minkowskiP);
     }
-
-
   // Calculate Mutual Reachability Distance
   convertToMutualReachability(knn_graph, core_dist);
   if (!quiet_mode) {
         printAndVerifyMutualReachability(points, core_dist, knn_graph, metric, minkowskiP);
     }
+//   writeKNNGraph("knn_graph_output.csv", knn_graph);
   // After you've built your knn_graph and converted to mutual reachability
   std::vector<Edge> all_edges = flatten(knn_graph);
   // Now you can sort by weight if needed
