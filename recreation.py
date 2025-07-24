@@ -69,3 +69,100 @@ for csv_file in csv_paths:
 
         # 4. Compare MRD
         # compareMRD(cpp_knn,mrd_graph,len(X))
+
+class UnionFind:
+    def __init__(self, N):
+        self.parent = np.full(2 * N - 1, -1, dtype=np.intp, order='C')
+        self.next_label = N
+        self.size = np.hstack((np.ones(N, dtype=np.intp),
+                               np.zeros(N - 1, dtype=np.intp)))
+
+    def union(self, m, n):
+        self.parent[m] = self.next_label
+        self.parent[n] = self.next_label
+        self.size[self.next_label] = self.size[m] + self.size[n]
+        self.next_label += 1
+
+    def fast_find(self, n):
+        p = n
+        # find the highest node in the linkage graph so far
+        while self.parent[n] != -1:
+            n = self.parent[n]
+        # provide a shortcut up to the highest node
+        while self.parent[p] != n:
+            p, self.parent[p] = self.parent[p], n
+        return n
+
+def make_single_linkage(mst):
+    """Construct a single-linkage tree from an MST.
+    
+    Parameters
+    ----------
+    mst : ndarray of shape (n_samples - 1,)
+        The MST representation of the mutual-reachability graph. The MST is
+        represented as a collection of edges. Each edge should have attributes:
+        - current_node
+        - next_node  
+        - distance
+    
+    Returns
+    -------
+    single_linkage : ndarray of shape (n_samples - 1,)
+        The single-linkage tree (dendrogram) built from the MST. Each
+        row represents:
+        - left node/cluster
+        - right node/cluster
+        - distance
+        - new cluster size
+    """
+    # Note mst.shape[0] is one fewer than the number of samples
+    n_samples = mst.shape[0] + 1
+    U = UnionFind(n_samples)
+    
+    # Create structured array for single linkage output
+    # Assuming HIERARCHY_dtype structure based on usage
+    dtype = [('left_node', np.intp), 
+             ('right_node', np.intp), 
+             ('value', np.float64), 
+             ('cluster_size', np.intp)]
+    
+    single_linkage = np.zeros(n_samples - 1, dtype=dtype)
+    
+    for i in range(n_samples - 1):
+        current_node = mst[i]['current_node']  # or mst[i].current_node if using structured array
+        next_node = mst[i]['next_node']        # or mst[i].next_node
+        distance = mst[i]['distance']          # or mst[i].distance
+        
+        current_node_cluster = U.fast_find(current_node)
+        next_node_cluster = U.fast_find(next_node)
+        
+        single_linkage[i]['left_node'] = current_node_cluster
+        single_linkage[i]['right_node'] = next_node_cluster
+        single_linkage[i]['value'] = distance
+        single_linkage[i]['cluster_size'] = U.size[current_node_cluster] + U.size[next_node_cluster]
+        
+        U.union(current_node_cluster, next_node_cluster)
+    
+    return single_linkage
+
+def _process_mst(min_spanning_tree):
+    """
+    Builds a single-linkage tree (SLT) from the provided minimum spanning tree
+    (MST). The MST is first sorted then processed by a custom Cython routine.
+
+    Parameters
+    ----------
+    min_spanning_tree : ndarray of shape (n_samples - 1,), dtype=MST_edge_dtype
+        The MST representation of the mutual-reachability graph. The MST is
+        represented as a collection of edges.
+
+    Returns
+    -------
+    single_linkage : ndarray of shape (n_samples - 1,), dtype=HIERARCHY_dtype
+        The single-linkage tree tree (dendrogram) built from the MST.
+    """
+    # Sort edges of the min_spanning_tree by weight
+    row_order = np.argsort(min_spanning_tree["distance"])
+    min_spanning_tree = min_spanning_tree[row_order]
+    # Convert edge list into standard hierarchical clustering format
+    return make_single_linkage(min_spanning_tree)
