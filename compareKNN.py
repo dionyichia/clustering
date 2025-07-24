@@ -38,12 +38,27 @@ for csv_file in csv_paths:
         # 3. Fit sklearn NearestNeighbors model
         sk_model = NearestNeighbors(n_neighbors=n_neighbors, algorithm="kd_tree", metric="euclidean")
         sk_model.fit(X)
-        sk_dists, sk_inds = sk_model.kneighbors(X, return_distance=True)
+        neighbors_distances, neighbors_indices = sk_model.kneighbors(X, return_distance=True)
+
+        # Core distances = distance to the kth neighbor
+        core_distances = neighbors_distances[:, -1]
+
+        # Build MRD graph
+        n_samples = X.shape[0]
+        mrd_graph = [[] for _ in range(n_samples)]
+
+        for i in range(n_samples):
+            for j_idx, j in enumerate(neighbors_indices[i]):
+                d_ij = neighbors_distances[i][j_idx]
+                c_i = core_distances[i]
+                c_j = core_distances[j]
+                mrd = max(c_i, c_j, d_ij)
+                mrd_graph[i].append((j, mrd))
 
         # 4. Compare
         for i in range(len(X)):
             cpp_nbrs = cpp_knn[i]
-            sk_nbrs = list(zip(sk_inds[i], sk_dists[i]))
+            sk_nbrs = mrd_graph[i]
 
             for (cpp_idx, cpp_d), (sk_idx, sk_d) in zip(cpp_nbrs, sk_nbrs):
                 if cpp_idx != sk_idx or not np.isclose(cpp_d, sk_d, atol=1e-6):
