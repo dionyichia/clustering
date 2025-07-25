@@ -7,7 +7,7 @@ from sklearn.neighbors import NearestNeighbors
 from scipy.spatial.distance import cdist
 
 
-def mst_from_data_matrix_python(raw_data, core_distances, alpha=1.0, dist_fn='euclidean'):
+def mst_from_data_matrix(raw_data, core_distances, alpha=1.0, dist_fn='euclidean'):
     """
     Construct the MST from mutual-reachability distances.
     
@@ -74,8 +74,30 @@ def mst_from_data_matrix_python(raw_data, core_distances, alpha=1.0, dist_fn='eu
 
     return mst_edges
 
+def mrd(n_neighbors,X):
+    # Fit sklearn NearestNeighbors model
+    sk_model = NearestNeighbors(n_neighbors,algorithm="kd_tree", metric="euclidean")
+    sk_model.fit(X)
+    neighbors_distances, neighbors_indices = sk_model.kneighbors(X, return_distance=True)
 
-def load_knn_graph_cpp(filename):
+    # Core distances = distance to the kth neighbor
+    core_distances = neighbors_distances[:, -1]
+
+    # Build MRD graph
+    n_samples = X.shape[0]
+    mrd_graph = [[] for _ in range(n_samples)]
+
+    for i in range(n_samples):
+        for j_idx, j in enumerate(neighbors_indices[i]):
+            d_ij = neighbors_distances[i][j_idx]
+            c_i = core_distances[i]
+            c_j = core_distances[j]
+            mrd = max(c_i, c_j, d_ij)
+            mrd_graph[i].append((j, mrd))
+
+    return mrd_graph, core_distances
+
+def load_mrd_graph_cpp(filename):
     cpp_knn = []
     with open(filename, newline='') as f:
         reader = csv.reader(f)
@@ -104,7 +126,7 @@ n_neighbors = 5
 feature_cols = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
 data_path = './data/batch_data_jitter_by_emitter_n_time'
 csv_paths = sorted(glob.glob(os.path.join(data_path, "*.csv")))
-cpp_csv_path = "knn_graph_output.csv"
+cpp_csv_path = "mrd_graph_output.csv"
 
 for csv_file in csv_paths:
     if os.path.basename(csv_file) == "Data_Batch_6_60_emitters_200000_samples.csv":
@@ -115,33 +137,15 @@ for csv_file in csv_paths:
         X = df[feature_cols].to_numpy()
 
         # 2. Load your C++ KNN output
-        cpp_knn = load_knn_graph_cpp(cpp_csv_path)  # change if per-file output
+        cpp_mrd = load_mrd_graph_cpp(cpp_csv_path)  # change if per-file output
 
-        # 3. Fit sklearn NearestNeighbors model
-        sk_model = NearestNeighbors(n_neighbors=n_neighbors, algorithm="kd_tree", metric="euclidean")
-        sk_model.fit(X)
-        neighbors_distances, neighbors_indices = sk_model.kneighbors(X, return_distance=True)
+        # 3. Load Python MRD output
+        py_mrd,core_distances = mrd(n_neighbors,X)
 
-        # Core distances = distance to the kth neighbor
-        core_distances = neighbors_distances[:, -1]
+        # compareMRD(cpp_mrd,py_mrd,len(X))
 
-        # # === COMPARE MRD ===
-        # # Build MRD graph
-        # n_samples = X.shape[0]
-        # mrd_graph = [[] for _ in range(n_samples)]
+        mst = mst_from_data_matrix(X,core_distances)
 
-        # for i in range(n_samples):
-        #     for j_idx, j in enumerate(neighbors_indices[i]):
-        #         d_ij = neighbors_distances[i][j_idx]
-        #         c_i = core_distances[i]
-        #         c_j = core_distances[j]
-        #         mrd = max(c_i, c_j, d_ij)
-        #         mrd_graph[i].append((j, mrd))
-
-
-        # compareMRD(cpp_knn,mrd_graph,len(X))
-
-        mst = mst_from_data_matrix_python(X,core_distances)
 class UnionFind:
     def __init__(self, N):
         self.parent = np.full(2 * N - 1, -1, dtype=np.intp, order='C')
