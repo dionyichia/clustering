@@ -6,73 +6,145 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from scipy.spatial.distance import cdist
 from collections import deque
+from typing import Any
 
-def mst_from_data_matrix(raw_data, core_distances, alpha=1.0, dist_fn='euclidean'):
-    """
-    Construct the MST from mutual-reachability distances.
+# Example usage and helper function for distance metric compatibility
+class EuclideanDistanceMetric:
+    """Simple Euclidean distance metric for compatibility."""
     
+    def dist(self, x1: np.ndarray, x2: np.ndarray) -> float:
+        """Calculate Euclidean distance between two points."""
+        return np.sqrt(np.sum((x1 - x2) ** 2))
+    
+# Numpy structured dtype representing a single ordered edge in Prim's algorithm
+MST_edge_dtype = np.dtype([
+    ("current_node", np.int64),
+    ("next_node", np.int64),
+    ("distance", np.float64),
+])
+def mst_from_data_matrix(
+    raw_data: np.ndarray,
+    core_distances: np.ndarray,
+    dist_metric = EuclideanDistanceMetric,
+    alpha: float = 1.0
+) -> np.ndarray:
+    """Compute the Minimum Spanning Tree (MST) representation of the mutual-
+    reachability graph generated from the provided `raw_data` and
+    `core_distances` using Prim's algorithm.
+
     Parameters
     ----------
     raw_data : ndarray of shape (n_samples, n_features)
         Input array of data samples.
+
     core_distances : ndarray of shape (n_samples,)
-        Core-distance for each sample.
-    alpha : float
-        Scaling factor for distance.
-    dist_fn : str or callable
-        Distance function (e.g., 'euclidean' or a custom function).
-    
+        An array containing the core-distance calculated for each corresponding
+        sample.
+
+    dist_metric : DistanceMetric
+        The distance metric to use when calculating pairwise distances for
+        determining mutual-reachability. Should have a .dist() method that
+        takes two data points and returns the distance.
+
+    alpha : float, default=1.0
+        Scaling parameter for distances.
+
     Returns
     -------
-    mst_edges : list of tuples
-        Each tuple is (source, target, distance) representing an MST edge.
+    mst : ndarray of shape (n_samples - 1,), dtype=MST_edge_dtype
+        The MST representation of the mutual-reachability graph. The MST is
+        represented as a collection of edges.
     """
-    n_samples, n_features = raw_data.shape
-
-    # Setup arrays
-    in_tree = np.zeros(n_samples, dtype=bool)
-    min_reachability = np.full(n_samples, np.inf)
-    current_sources = np.full(n_samples, -1, dtype=int)
-
-    mst_edges = []
+    
+    n_samples, num_features = raw_data.shape
+    
+    # Initialize the MST array with the structured dtype
+    mst = np.empty(n_samples - 1, dtype=MST_edge_dtype)
+    
+    # Track which nodes are already in the tree
+    in_tree = np.zeros(n_samples, dtype=np.uint8)
+    
+    # Track minimum reachability distance to each node
+    min_reachability = np.full(n_samples, fill_value=np.inf, dtype=np.float64)
+    
+    # Track the source node for each node's minimum reachability
+    current_sources = np.ones(n_samples, dtype=np.int64)
+    
+    # Start with node 0
     current_node = 0
-
-    for _ in range(n_samples - 1):
-        in_tree[current_node] = True
+    
+    # The following loop dynamically updates minimum reachability node-by-node,
+    # avoiding unnecessary computation where possible.
+    for i in range(n_samples - 1):
+        
+        # Add current node to the tree
+        in_tree[current_node] = 1
+        
         current_node_core_dist = core_distances[current_node]
-
+        
+        # Initialize variables for finding the next best edge
         new_reachability = np.inf
-        source_node = current_node
-        new_node = -1
-
+        source_node = 0
+        new_node = 0
+        
+        # Check all nodes not yet in the tree
         for j in range(n_samples):
             if in_tree[j]:
                 continue
-
-            # Compute pairwise distance
-            pair_dist = np.linalg.norm(raw_data[current_node] - raw_data[j]) if dist_fn == 'euclidean' else dist_fn(raw_data[current_node], raw_data[j])
-            pair_dist /= alpha
-
+            
+            next_node_min_reach = min_reachability[j]
+            next_node_source = current_sources[j]
+            
+            # Calculate pairwise distance between current_node and j
+            pair_distance = dist_metric.dist(
+                raw_data[current_node],
+                raw_data[j]
+            )
+            
+            pair_distance /= alpha
+            
             next_node_core_dist = core_distances[j]
-            mutual_reachability = max(current_node_core_dist, next_node_core_dist, pair_dist)
-
-            if mutual_reachability < min_reachability[j]:
-                min_reachability[j] = mutual_reachability
+            
+            # Calculate mutual reachability distance
+            mutual_reachability_distance = max(
+                current_node_core_dist,
+                next_node_core_dist,
+                pair_distance
+            )
+            
+            # If MRD(i, j) is smaller than node j's min_reachability, we update
+            # node j's min_reachability for future reference.
+            if mutual_reachability_distance < next_node_min_reach:
+                min_reachability[j] = mutual_reachability_distance
                 current_sources[j] = current_node
-                if mutual_reachability < new_reachability:
-                    new_reachability = mutual_reachability
+                
+                # If MRD(i, j) is also smaller than node i's current
+                # min_reachability, we update and set their edge as the current
+                # MST edge candidate.
+                if mutual_reachability_distance < new_reachability:
+                    new_reachability = mutual_reachability_distance
                     source_node = current_node
                     new_node = j
-            elif min_reachability[j] < new_reachability:
-                new_reachability = min_reachability[j]
-                source_node = current_sources[j]
+            
+            # If the node j is closer to another node already in the tree, we
+            # make their edge the current MST candidate edge.
+            elif next_node_min_reach < new_reachability:
+                new_reachability = next_node_min_reach
+                source_node = next_node_source
                 new_node = j
-
-        assert new_node != -1, "No new node was added — graph may be disconnected or something is wrong."
-        mst_edges.append((source_node, new_node, new_reachability))
+        
+        # Add the selected edge to the MST
+        mst[i]['current_node'] = source_node
+        mst[i]['next_node'] = new_node
+        mst[i]['distance'] = new_reachability
+        
+        # Move to the newly added node
         current_node = new_node
+    
+    return mst
 
-    return mst_edges
+
+
 
 def mrd(n_neighbors,X):
     # Fit sklearn NearestNeighbors model
