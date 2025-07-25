@@ -42,7 +42,6 @@ from scipy.sparse import csgraph, issparse
 # from ...metrics._dist_metrics import DistanceMetric
 # from ...metrics.pairwise import _VALID_METRICS
 # from ...neighbors import BallTree, KDTree, NearestNeighbors
-# from ...utils._param_validation import Interval, StrOptions
 # from ...utils.validation import (
 #     _allclose_dense_sparse,
 #     _assert_all_finite,
@@ -52,20 +51,43 @@ from scipy.sparse import csgraph, issparse
 from sklearn.base import BaseEstimator, ClusterMixin
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import BallTree, KDTree, NearestNeighbors
-from sklearn.utils.validation import (
-    _allclose_dense_sparse,  # internal, but in Python
-    _assert_all_finite,      # internal, but in Python
-    validate_data,
-)
+from .utils._param_validation import Interval, StrOptions
 
-from ._linkage import (
+from recreation import (
     MST_edge_dtype,
     make_single_linkage,
-    mst_from_data_matrix,
-    mst_from_mutual_reachability,
+    mst_from_data_matrix
 )
-from ._reachability import mutual_reachability_graph
-from ._tree import HIERARCHY_dtype, labelling_at_cut, tree_to_labels
+from recreation import mutual_reachability_graph
+from recreation import HIERARCHY_dtype, tree_to_labels
+
+_VALID_METRICS = [
+    "euclidean",
+    "l2",
+    "l1",
+    "manhattan",
+    "cityblock",
+    "braycurtis",
+    "canberra",
+    "chebyshev",
+    "correlation",
+    "cosine",
+    "dice",
+    "hamming",
+    "jaccard",
+    "mahalanobis",
+    "matching",
+    "minkowski",
+    "rogerstanimoto",
+    "russellrao",
+    "seuclidean",
+    "sokalsneath",
+    "sqeuclidean",
+    "yule",
+    "wminkowski",
+    "nan_euclidean",
+    "haversine",
+]
 
 FAST_METRICS = set(KDTree.valid_metrics + BallTree.valid_metrics)
 
@@ -89,65 +111,65 @@ _OUTLIER_ENCODING: dict = {
 }
 
 
-def _brute_mst(mutual_reachability, min_samples):
-    """
-    Builds a minimum spanning tree (MST) from the provided mutual-reachability
-    values. This function dispatches to a custom Cython implementation for
-    dense arrays, and `scipy.sparse.csgraph.minimum_spanning_tree` for sparse
-    arrays/matrices.
+# def _brute_mst(mutual_reachability, min_samples):
+#     """
+#     Builds a minimum spanning tree (MST) from the provided mutual-reachability
+#     values. This function dispatches to a custom Cython implementation for
+#     dense arrays, and `scipy.sparse.csgraph.minimum_spanning_tree` for sparse
+#     arrays/matrices.
 
-    Parameters
-    ----------
-    mututal_reachability_graph: {ndarray, sparse matrix} of shape \
-            (n_samples, n_samples)
-        Weighted adjacency matrix of the mutual reachability graph.
+#     Parameters
+#     ----------
+#     mututal_reachability_graph: {ndarray, sparse matrix} of shape \
+#             (n_samples, n_samples)
+#         Weighted adjacency matrix of the mutual reachability graph.
 
-    min_samples : int, default=None
-        The number of samples in a neighborhood for a point
-        to be considered as a core point. This includes the point itself.
+#     min_samples : int, default=None
+#         The number of samples in a neighborhood for a point
+#         to be considered as a core point. This includes the point itself.
 
-    Returns
-    -------
-    mst : ndarray of shape (n_samples - 1,), dtype=MST_edge_dtype
-        The MST representation of the mutual-reachability graph. The MST is
-        represented as a collection of edges.
-    """
-    if not issparse(mutual_reachability):
-        return mst_from_mutual_reachability(mutual_reachability)
+#     Returns
+#     -------
+#     mst : ndarray of shape (n_samples - 1,), dtype=MST_edge_dtype
+#         The MST representation of the mutual-reachability graph. The MST is
+#         represented as a collection of edges.
+#     """
+#     if not issparse(mutual_reachability):
+#         return mst_from_mutual_reachability(mutual_reachability)
 
-    # Check if the mutual reachability matrix has any rows which have
-    # less than `min_samples` non-zero elements.
-    indptr = mutual_reachability.indptr
-    num_points = mutual_reachability.shape[0]
-    if any((indptr[i + 1] - indptr[i]) < min_samples for i in range(num_points)):
-        raise ValueError(
-            f"There exists points with fewer than {min_samples} neighbors. Ensure"
-            " your distance matrix has non-zero values for at least"
-            f" `min_sample`={min_samples} neighbors for each points (i.e. K-nn"
-            " graph), or specify a `max_distance` in `metric_params` to use when"
-            " distances are missing."
-        )
-    # Check connected component on mutual reachability.
-    # If more than one connected component is present,
-    # it means that the graph is disconnected.
-    n_components = csgraph.connected_components(
-        mutual_reachability, directed=False, return_labels=False
-    )
-    if n_components > 1:
-        raise ValueError(
-            f"Sparse mutual reachability matrix has {n_components} connected"
-            " components. HDBSCAN cannot be performed on a disconnected graph. Ensure"
-            " that the sparse distance matrix has only one connected component."
-        )
+#     # Check if the mutual reachability matrix has any rows which have
+#     # less than `min_samples` non-zero elements.
+#     indptr = mutual_reachability.indptr
+#     num_points = mutual_reachability.shape[0]
+#     if any((indptr[i + 1] - indptr[i]) < min_samples for i in range(num_points)):
+#         raise ValueError(
+#             f"There exists points with fewer than {min_samples} neighbors. Ensure"
+#             " your distance matrix has non-zero values for at least"
+#             f" `min_sample`={min_samples} neighbors for each points (i.e. K-nn"
+#             " graph), or specify a `max_distance` in `metric_params` to use when"
+#             " distances are missing."
+#         )
+#     # Check connected component on mutual reachability.
+#     # If more than one connected component is present,
+#     # it means that the graph is disconnected.
+#     n_components = csgraph.connected_components(
+#         mutual_reachability, directed=False, return_labels=False
+#     )
+#     if n_components > 1:
+#         raise ValueError(
+#             f"Sparse mutual reachability matrix has {n_components} connected"
+#             " components. HDBSCAN cannot be performed on a disconnected graph. Ensure"
+#             " that the sparse distance matrix has only one connected component."
+#         )
 
-    # Compute the minimum spanning tree for the sparse graph
-    sparse_min_spanning_tree = csgraph.minimum_spanning_tree(mutual_reachability)
-    rows, cols = sparse_min_spanning_tree.nonzero()
-    mst = np.rec.fromarrays(
-        [rows, cols, sparse_min_spanning_tree.data],
-        dtype=MST_edge_dtype,
-    )
-    return mst
+#     # Compute the minimum spanning tree for the sparse graph
+#     sparse_min_spanning_tree = csgraph.minimum_spanning_tree(mutual_reachability)
+#     rows, cols = sparse_min_spanning_tree.nonzero()
+#     mst = np.rec.fromarrays(
+#         [rows, cols, sparse_min_spanning_tree.data],
+#         dtype=MST_edge_dtype,
+#     )
+#     return mst
 
 
 def _process_mst(min_spanning_tree):
@@ -173,115 +195,115 @@ def _process_mst(min_spanning_tree):
     return make_single_linkage(min_spanning_tree)
 
 
-def _hdbscan_brute(
-    X,
-    min_samples=5,
-    alpha=None,
-    metric="euclidean",
-    n_jobs=None,
-    copy=False,
-    **metric_params,
-):
-    """
-    Builds a single-linkage tree (SLT) from the input data `X`. If
-    `metric="precomputed"` then `X` must be a symmetric array of distances.
-    Otherwise, the pairwise distances are calculated directly and passed to
-    `mutual_reachability_graph`.
+# def _hdbscan_brute(
+#     X,
+#     min_samples=5,
+#     alpha=None,
+#     metric="euclidean",
+#     n_jobs=None,
+#     copy=False,
+#     **metric_params,
+# ):
+#     """
+#     Builds a single-linkage tree (SLT) from the input data `X`. If
+#     `metric="precomputed"` then `X` must be a symmetric array of distances.
+#     Otherwise, the pairwise distances are calculated directly and passed to
+#     `mutual_reachability_graph`.
 
-    Parameters
-    ----------
-    X : ndarray of shape (n_samples, n_features) or (n_samples, n_samples)
-        Either the raw data from which to compute the pairwise distances,
-        or the precomputed distances.
+#     Parameters
+#     ----------
+#     X : ndarray of shape (n_samples, n_features) or (n_samples, n_samples)
+#         Either the raw data from which to compute the pairwise distances,
+#         or the precomputed distances.
 
-    min_samples : int, default=None
-        The number of samples in a neighborhood for a point
-        to be considered as a core point. This includes the point itself.
+#     min_samples : int, default=None
+#         The number of samples in a neighborhood for a point
+#         to be considered as a core point. This includes the point itself.
 
-    alpha : float, default=1.0
-        A distance scaling parameter as used in robust single linkage.
+#     alpha : float, default=1.0
+#         A distance scaling parameter as used in robust single linkage.
 
-    metric : str or callable, default='euclidean'
-        The metric to use when calculating distance between instances in a
-        feature array.
+#     metric : str or callable, default='euclidean'
+#         The metric to use when calculating distance between instances in a
+#         feature array.
 
-        - If metric is a string or callable, it must be one of
-          the options allowed by :func:`~sklearn.metrics.pairwise_distances`
-          for its metric parameter.
+#         - If metric is a string or callable, it must be one of
+#           the options allowed by :func:`~sklearn.metrics.pairwise_distances`
+#           for its metric parameter.
 
-        - If metric is "precomputed", X is assumed to be a distance matrix and
-          must be square.
+#         - If metric is "precomputed", X is assumed to be a distance matrix and
+#           must be square.
 
-    n_jobs : int, default=None
-        The number of jobs to use for computing the pairwise distances. This
-        works by breaking down the pairwise matrix into n_jobs even slices and
-        computing them in parallel. This parameter is passed directly to
-        :func:`~sklearn.metrics.pairwise_distances`.
+#     n_jobs : int, default=None
+#         The number of jobs to use for computing the pairwise distances. This
+#         works by breaking down the pairwise matrix into n_jobs even slices and
+#         computing them in parallel. This parameter is passed directly to
+#         :func:`~sklearn.metrics.pairwise_distances`.
 
-        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
-        ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
-        for more details.
+#         ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
+#         ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
+#         for more details.
 
-    copy : bool, default=False
-        If `copy=True` then any time an in-place modifications would be made
-        that would overwrite `X`, a copy will first be made, guaranteeing that
-        the original data will be unchanged. Currently, it only applies when
-        `metric="precomputed"`, when passing a dense array or a CSR sparse
-        array/matrix.
+#     copy : bool, default=False
+#         If `copy=True` then any time an in-place modifications would be made
+#         that would overwrite `X`, a copy will first be made, guaranteeing that
+#         the original data will be unchanged. Currently, it only applies when
+#         `metric="precomputed"`, when passing a dense array or a CSR sparse
+#         array/matrix.
 
-    metric_params : dict, default=None
-        Arguments passed to the distance metric.
+#     metric_params : dict, default=None
+#         Arguments passed to the distance metric.
 
-    Returns
-    -------
-    single_linkage : ndarray of shape (n_samples - 1,), dtype=HIERARCHY_dtype
-        The single-linkage tree tree (dendrogram) built from the MST.
-    """
-    if metric == "precomputed":
-        if X.shape[0] != X.shape[1]:
-            raise ValueError(
-                "The precomputed distance matrix is expected to be symmetric, however"
-                f" it has shape {X.shape}. Please verify that the"
-                " distance matrix was constructed correctly."
-            )
-        if not _allclose_dense_sparse(X, X.T):
-            raise ValueError(
-                "The precomputed distance matrix is expected to be symmetric, however"
-                " its values appear to be asymmetric. Please verify that the distance"
-                " matrix was constructed correctly."
-            )
+#     Returns
+#     -------
+#     single_linkage : ndarray of shape (n_samples - 1,), dtype=HIERARCHY_dtype
+#         The single-linkage tree tree (dendrogram) built from the MST.
+#     """
+#     if metric == "precomputed":
+#         if X.shape[0] != X.shape[1]:
+#             raise ValueError(
+#                 "The precomputed distance matrix is expected to be symmetric, however"
+#                 f" it has shape {X.shape}. Please verify that the"
+#                 " distance matrix was constructed correctly."
+#             )
+#         if not _allclose_dense_sparse(X, X.T):
+#             raise ValueError(
+#                 "The precomputed distance matrix is expected to be symmetric, however"
+#                 " its values appear to be asymmetric. Please verify that the distance"
+#                 " matrix was constructed correctly."
+#             )
 
-        distance_matrix = X.copy() if copy else X
-    else:
-        distance_matrix = pairwise_distances(
-            X, metric=metric, n_jobs=n_jobs, **metric_params
-        )
-    distance_matrix /= alpha
+#         distance_matrix = X.copy() if copy else X
+#     else:
+#         distance_matrix = pairwise_distances(
+#             X, metric=metric, n_jobs=n_jobs, **metric_params
+#         )
+#     distance_matrix /= alpha
 
-    max_distance = metric_params.get("max_distance", 0.0)
-    if issparse(distance_matrix) and distance_matrix.format != "csr":
-        # we need CSR format to avoid a conversion in `_brute_mst` when calling
-        # `csgraph.connected_components`
-        distance_matrix = distance_matrix.tocsr()
+#     max_distance = metric_params.get("max_distance", 0.0)
+#     if issparse(distance_matrix) and distance_matrix.format != "csr":
+#         # we need CSR format to avoid a conversion in `_brute_mst` when calling
+#         # `csgraph.connected_components`
+#         distance_matrix = distance_matrix.tocsr()
 
-    # Note that `distance_matrix` is manipulated in-place, however we do not
-    # need it for anything else past this point, hence the operation is safe.
-    mutual_reachability_ = mutual_reachability_graph(
-        distance_matrix, min_samples=min_samples, max_distance=max_distance
-    )
-    min_spanning_tree = _brute_mst(mutual_reachability_, min_samples=min_samples)
-    # Warn if the MST couldn't be constructed around the missing distances
-    if np.isinf(min_spanning_tree["distance"]).any():
-        warn(
-            (
-                "The minimum spanning tree contains edge weights with value "
-                "infinity. Potentially, you are missing too many distances "
-                "in the initial distance matrix for the given neighborhood "
-                "size."
-            ),
-            UserWarning,
-        )
-    return _process_mst(min_spanning_tree)
+#     # Note that `distance_matrix` is manipulated in-place, however we do not
+#     # need it for anything else past this point, hence the operation is safe.
+#     mutual_reachability_ = mutual_reachability_graph(
+#         distance_matrix, min_samples=min_samples, max_distance=max_distance
+#     )
+#     min_spanning_tree = _brute_mst(mutual_reachability_, min_samples=min_samples)
+#     # Warn if the MST couldn't be constructed around the missing distances
+#     if np.isinf(min_spanning_tree["distance"]).any():
+#         warn(
+#             (
+#                 "The minimum spanning tree contains edge weights with value "
+#                 "infinity. Potentially, you are missing too many distances "
+#                 "in the initial distance matrix for the given neighborhood "
+#                 "size."
+#             ),
+#             UserWarning,
+#         )
+#     return _process_mst(min_spanning_tree)
 
 
 def _hdbscan_prims(
@@ -719,64 +741,28 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
             )
 
         self._metric_params = self.metric_params or {}
+
+        # -- If metric is NOT precomputed --
         if self.metric != "precomputed":
-            # Non-precomputed matrices may contain non-finite values.
-            X = validate_data(
-                self,
-                X,
-                accept_sparse=["csr", "lil"],
-                ensure_all_finite=False,
-                dtype=np.float64,
-            )
+            # Basic format validation
+            if issparse(X):
+                X = X.astype(np.float64)
+            else:
+                X = np.asarray(X, dtype=np.float64)
+                if X.ndim != 2:
+                    raise ValueError("Input data X must be a 2D array.")
             self._raw_data = X
-            all_finite = True
-            try:
-                _assert_all_finite(X.data if issparse(X) else X)
-            except ValueError:
-                all_finite = False
 
-            if not all_finite:
-                # Pass only the purely finite indices into hdbscan
-                # We will later assign all non-finite points their
-                # corresponding labels, as specified in `_OUTLIER_ENCODING`
-
-                # Reduce X to make the checks for missing/outlier samples more
-                # convenient.
-                reduced_X = X.sum(axis=1)
-
-                # Samples with missing data are denoted by the presence of
-                # `np.nan`
-                missing_index = np.isnan(reduced_X).nonzero()[0]
-
-                # Outlier samples are denoted by the presence of `np.inf`
-                infinite_index = np.isinf(reduced_X).nonzero()[0]
-
-                # Continue with only finite samples
-                finite_index = _get_finite_row_indices(X)
-                internal_to_raw = {x: y for x, y in enumerate(finite_index)}
-                X = X[finite_index]
+        # -- If metric is precomputed --
         elif issparse(X):
-            # Handle sparse precomputed distance matrices separately
-            X = validate_data(
-                self,
-                X,
-                accept_sparse=["csr", "lil"],
-                dtype=np.float64,
-                force_writeable=True,
-            )
+            # Sparse precomputed matrix
+            X = X.astype(np.float64)
         else:
-            # Only non-sparse, precomputed distance matrices are handled here
-            # and thereby allowed to contain numpy.inf for missing distances
-
-            # Perform data validation after removing infinite values (numpy.inf)
-            # from the given distance matrix.
-            X = validate_data(
-                self, X, ensure_all_finite=False, dtype=np.float64, force_writeable=True
-            )
-            if np.isnan(X).any():
-                # TODO: Support np.nan in Cython implementation for precomputed
-                # dense HDBSCAN
-                raise ValueError("np.nan values found in precomputed-dense")
+            # Dense precomputed distance matrix
+            X = np.asarray(X, dtype=np.float64)
+            if X.ndim != 2:
+                raise ValueError("Precomputed distance matrix must be 2D.")
+            
         if X.shape[0] == 1:
             raise ValueError("n_samples=1 while HDBSCAN requires more than one sample")
         self._min_samples = (
@@ -820,8 +806,9 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
                 raise ValueError("Sparse data matrices only support algorithm `brute`.")
 
             if self.algorithm == "brute":
-                mst_func = _hdbscan_brute
-                kwargs["copy"] = self.copy
+                # mst_func = _hdbscan_brute
+                # kwargs["copy"] = self.copy
+                print("Brute Algo, Skipping...")
             elif self.algorithm == "kd_tree":
                 mst_func = _hdbscan_prims
                 kwargs["algo"] = "kd_tree"
@@ -833,8 +820,9 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
         else:
             if issparse(X) or self.metric not in FAST_METRICS:
                 # We can't do much with sparse matrices ...
-                mst_func = _hdbscan_brute
-                kwargs["copy"] = self.copy
+                # mst_func = _hdbscan_brute
+                # kwargs["copy"] = self.copy 
+                print("Brute Algo, Skipping...")
             elif self.metric in KDTree.valid_metrics:
                 # TODO: Benchmark KD vs Ball Tree efficiency
                 mst_func = _hdbscan_prims
@@ -856,29 +844,30 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
             self.cluster_selection_epsilon,
             self.max_cluster_size,
         )
-        if self.metric != "precomputed" and not all_finite:
-            # Remap indices to align with original data in the case of
-            # non-finite entries. Samples with np.inf are mapped to -1 and
-            # those with np.nan are mapped to -2.
-            self._single_linkage_tree_ = remap_single_linkage_tree(
-                self._single_linkage_tree_,
-                internal_to_raw,
-                # There may be overlap for points w/ both `np.inf` and `np.nan`
-                non_finite=set(np.hstack([infinite_index, missing_index])),
-            )
-            new_labels = np.empty(self._raw_data.shape[0], dtype=np.int32)
-            new_labels[finite_index] = self.labels_
-            new_labels[infinite_index] = _OUTLIER_ENCODING["infinite"]["label"]
-            new_labels[missing_index] = _OUTLIER_ENCODING["missing"]["label"]
-            self.labels_ = new_labels
 
-            new_probabilities = np.zeros(self._raw_data.shape[0], dtype=np.float64)
-            new_probabilities[finite_index] = self.probabilities_
-            # Infinite outliers have probability 0 by convention, though this
-            # is arbitrary.
-            new_probabilities[infinite_index] = _OUTLIER_ENCODING["infinite"]["prob"]
-            new_probabilities[missing_index] = _OUTLIER_ENCODING["missing"]["prob"]
-            self.probabilities_ = new_probabilities
+        # if self.metric != "precomputed" and not all_finite:
+        #     # Remap indices to align with original data in the case of
+        #     # non-finite entries. Samples with np.inf are mapped to -1 and
+        #     # those with np.nan are mapped to -2.
+        #     self._single_linkage_tree_ = remap_single_linkage_tree(
+        #         self._single_linkage_tree_,
+        #         internal_to_raw,
+        #         # There may be overlap for points w/ both `np.inf` and `np.nan`
+        #         non_finite=set(np.hstack([infinite_index, missing_index])),
+        #     )
+        #     new_labels = np.empty(self._raw_data.shape[0], dtype=np.int32)
+        #     new_labels[finite_index] = self.labels_
+        #     new_labels[infinite_index] = _OUTLIER_ENCODING["infinite"]["label"]
+        #     new_labels[missing_index] = _OUTLIER_ENCODING["missing"]["label"]
+        #     self.labels_ = new_labels
+
+        #     new_probabilities = np.zeros(self._raw_data.shape[0], dtype=np.float64)
+        #     new_probabilities[finite_index] = self.probabilities_
+        #     # Infinite outliers have probability 0 by convention, though this
+        #     # is arbitrary.
+        #     new_probabilities[infinite_index] = _OUTLIER_ENCODING["infinite"]["prob"]
+        #     new_probabilities[missing_index] = _OUTLIER_ENCODING["missing"]["prob"]
+        #     self.probabilities_ = new_probabilities
 
         if self.store_centers:
             self._weighted_cluster_center(X)
@@ -949,57 +938,57 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
                 self.medoids_[idx] = data[medoid_index]
         return
 
-    def dbscan_clustering(self, cut_distance, min_cluster_size=5):
-        """Return clustering given by DBSCAN without border points.
+    # def dbscan_clustering(self, cut_distance, min_cluster_size=5):
+    #     """Return clustering given by DBSCAN without border points.
 
-        Return clustering that would be equivalent to running DBSCAN* for a
-        particular cut_distance (or epsilon) DBSCAN* can be thought of as
-        DBSCAN without the border points.  As such these results may differ
-        slightly from `cluster.DBSCAN` due to the difference in implementation
-        over the non-core points.
+    #     Return clustering that would be equivalent to running DBSCAN* for a
+    #     particular cut_distance (or epsilon) DBSCAN* can be thought of as
+    #     DBSCAN without the border points.  As such these results may differ
+    #     slightly from `cluster.DBSCAN` due to the difference in implementation
+    #     over the non-core points.
 
-        This can also be thought of as a flat clustering derived from constant
-        height cut through the single linkage tree.
+    #     This can also be thought of as a flat clustering derived from constant
+    #     height cut through the single linkage tree.
 
-        This represents the result of selecting a cut value for robust single linkage
-        clustering. The `min_cluster_size` allows the flat clustering to declare noise
-        points (and cluster smaller than `min_cluster_size`).
+    #     This represents the result of selecting a cut value for robust single linkage
+    #     clustering. The `min_cluster_size` allows the flat clustering to declare noise
+    #     points (and cluster smaller than `min_cluster_size`).
 
-        Parameters
-        ----------
-        cut_distance : float
-            The mutual reachability distance cut value to use to generate a
-            flat clustering.
+    #     Parameters
+    #     ----------
+    #     cut_distance : float
+    #         The mutual reachability distance cut value to use to generate a
+    #         flat clustering.
 
-        min_cluster_size : int, default=5
-            Clusters smaller than this value with be called 'noise' and remain
-            unclustered in the resulting flat clustering.
+    #     min_cluster_size : int, default=5
+    #         Clusters smaller than this value with be called 'noise' and remain
+    #         unclustered in the resulting flat clustering.
 
-        Returns
-        -------
-        labels : ndarray of shape (n_samples,)
-            An array of cluster labels, one per datapoint.
-            Outliers are labeled as follows:
+    #     Returns
+    #     -------
+    #     labels : ndarray of shape (n_samples,)
+    #         An array of cluster labels, one per datapoint.
+    #         Outliers are labeled as follows:
 
-            - Noisy samples are given the label -1.
-            - Samples with infinite elements (+/- np.inf) are given the label -2.
-            - Samples with missing data are given the label -3, even if they
-              also have infinite elements.
-        """
-        labels = labelling_at_cut(
-            self._single_linkage_tree_, cut_distance, min_cluster_size
-        )
-        # Infer indices from labels generated during `fit`
-        infinite_index = self.labels_ == _OUTLIER_ENCODING["infinite"]["label"]
-        missing_index = self.labels_ == _OUTLIER_ENCODING["missing"]["label"]
+    #         - Noisy samples are given the label -1.
+    #         - Samples with infinite elements (+/- np.inf) are given the label -2.
+    #         - Samples with missing data are given the label -3, even if they
+    #           also have infinite elements.
+    #     """
+    #     labels = labelling_at_cut(
+    #         self._single_linkage_tree_, cut_distance, min_cluster_size
+    #     )
+    #     # Infer indices from labels generated during `fit`
+    #     infinite_index = self.labels_ == _OUTLIER_ENCODING["infinite"]["label"]
+    #     missing_index = self.labels_ == _OUTLIER_ENCODING["missing"]["label"]
 
-        # Overwrite infinite/missing outlier samples (otherwise simple noise)
-        labels[infinite_index] = _OUTLIER_ENCODING["infinite"]["label"]
-        labels[missing_index] = _OUTLIER_ENCODING["missing"]["label"]
-        return labels
+    #     # Overwrite infinite/missing outlier samples (otherwise simple noise)
+    #     labels[infinite_index] = _OUTLIER_ENCODING["infinite"]["label"]
+    #     labels[missing_index] = _OUTLIER_ENCODING["missing"]["label"]
+    #     return labels
 
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.input_tags.sparse = True
-        tags.input_tags.allow_nan = self.metric != "precomputed"
-        return tags
+    # def __sklearn_tags__(self):
+    #     tags = super().__sklearn_tags__()
+    #     tags.input_tags.sparse = True
+    #     tags.input_tags.allow_nan = self.metric != "precomputed"
+    #     return tags
