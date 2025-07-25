@@ -340,13 +340,16 @@ int main(int argc, char** argv) {
     }
 
 
+  // generate weights
+  // based on stds of jitter added for ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
+  std::vector<double> stds = {1.0, 0.21, 0.2, 0.2};
+  std::vector<double> weights = computeNormalizedStdRangeWeights(points, stds);
   min_cluster_size = max(20,min_cluster_size);
   int N = points.size();
   std::vector<std::vector<std::pair<int,double>>> knn_graph(points.size());
   std::vector<double> core_dist(points.size());
 
   auto root = buildKDTree(points);
-  std::vector<double> weights = computeNormalizedInverseStdDevWeights(points);
 
   for (int i = 0; i < N; ++i) {
       // 1) Prepare an empty max-heap

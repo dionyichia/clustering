@@ -220,48 +220,147 @@ void printUsage(char* prog) {
     std::cerr << "  --help, -h              Show this help message\n";
 }
 
-// Compute normalized inverse standard deviation weights
-std::vector<double> computeNormalizedInverseStdDevWeights(const std::vector<Point>& points) {
-    if (points.empty()) throw std::invalid_argument("Points cannot be empty.");
-    const size_t D = points[0].size();
-    const size_t N = points.size();
+// // Compute normalized inverse standard deviation weights
+// std::vector<double> computeNormalizedInverseStdDevWeights(const std::vector<Point>& points) {
+//     if (points.empty()) throw std::invalid_argument("Points cannot be empty.");
+//     const size_t D = points[0].size();
+//     const size_t N = points.size();
 
-    std::vector<double> means(D, 0.0);
-    std::vector<double> stds(D, 0.0);
+//     std::vector<double> means(D, 0.0);
+//     std::vector<double> stds(D, 0.0);
     
-    // Step 1: Compute mean per dimension
-    for (const Point& p : points) {
-        for (size_t d = 0; d < D; ++d) {
-            means[d] += p[d];
-        }
-    }
-    for (size_t d = 0; d < D; ++d) {
-        means[d] /= N;
-    }
+//     // Step 1: Compute mean per dimension
+//     for (const Point& p : points) {
+//         for (size_t d = 0; d < D; ++d) {
+//             means[d] += p[d];
+//         }
+//     }
+//     for (size_t d = 0; d < D; ++d) {
+//         means[d] /= N;
+//     }
 
-    // Step 2: Compute std deviation per dimension
-    for (const Point& p : points) {
-        for (size_t d = 0; d < D; ++d) {
-            double diff = p[d] - means[d];
-            stds[d] += diff * diff;
-        }
-    }
-    for (size_t d = 0; d < D; ++d) {
-        stds[d] = std::sqrt(stds[d] / N);
-    }
+//     // Step 2: Compute std deviation per dimension
+//     for (const Point& p : points) {
+//         for (size_t d = 0; d < D; ++d) {
+//             double diff = p[d] - means[d];
+//             stds[d] += diff * diff;
+//         }
+//     }
+//     for (size_t d = 0; d < D; ++d) {
+//         stds[d] = std::sqrt(stds[d] / N);
+//     }
 
-    // Step 3: Compute inverse std and normalize
-    std::vector<double> inv_std(D, 0.0);
+//     // Step 3: Compute inverse std and normalize
+//     std::vector<double> inv_std(D, 0.0);
+//     double sum = 0.0;
+//     for (size_t d = 0; d < D; ++d) {
+//         if (stds[d] == 0.0) throw std::runtime_error("Standard deviation is zero in dimension.");
+//         inv_std[d] = 1.0 / stds[d];
+//         sum += inv_std[d];
+//     }
+
+//     for (size_t d = 0; d < D; ++d) {
+//         inv_std[d] /= sum;  // normalize so weights sum to 1
+//     }
+
+//     return inv_std;
+// }
+
+// Helper function to compute percentile
+double computePercentile(std::vector<double> values, double percentile) {
+    if (values.empty()) throw std::invalid_argument("Values cannot be empty.");
+    
+    std::sort(values.begin(), values.end());
+    size_t n = values.size();
+    
+    if (percentile <= 0.0) return values[0];
+    if (percentile >= 100.0) return values[n - 1];
+    
+    double index = (percentile / 100.0) * (n - 1);
+    size_t lower_index = static_cast<size_t>(std::floor(index));
+    size_t upper_index = static_cast<size_t>(std::ceil(index));
+    
+    if (lower_index == upper_index) {
+        return values[lower_index];
+    }
+    
+    double weight = index - lower_index;
+    return values[lower_index] * (1.0 - weight) + values[upper_index] * weight;
+}
+
+// Compute weights based on std/range with normalization
+std::vector<double> computeNormalizedStdRangeWeights(
+    const std::vector<Point>& points,
+    const std::vector<double>& stds
+) {
+    if (points.empty()) throw std::invalid_argument("Points cannot be empty.");
+    if (stds.empty()) throw std::invalid_argument("Standard deviations cannot be empty.");
+    
+    const size_t D = points[0].size();
+    if (stds.size() != D) {
+        throw std::invalid_argument("Standard deviations size must match point dimensions.");
+    }
+    
+    std::vector<double> weights(D, 0.0);
+    
+    // For each dimension, compute the appropriate range
+    for (size_t d = 0; d < D; ++d) {
+        // Extract values for this dimension
+        std::vector<double> values;
+        values.reserve(points.size());
+        for (const Point& p : points) {
+            values.push_back(p[d]);
+        }
+        
+        // Compute percentiles
+        double p10 = computePercentile(values, 10.0);
+        double p25 = computePercentile(values, 25.0);
+        double p75 = computePercentile(values, 75.0);
+        double p90 = computePercentile(values, 90.0);
+        
+        double range_90_10 = p90 - p10;
+        double range_75_25 = p75 - p25;
+        
+        // Choose range based on your criteria
+        // If they differ significantly, use IQR (75th - 25th)
+        // You can adjust this threshold as needed
+        double range;
+        double ratio = std::abs(range_90_10 - range_75_25) / std::max(range_90_10, range_75_25);
+        
+        if (ratio > 0.2) {  // Threshold for "significant difference" - adjust as needed
+            range = range_75_25;
+        } else {
+            range = range_90_10;
+        }
+        
+        if (range == 0.0) {
+            throw std::runtime_error("Range is zero in dimension " + std::to_string(d));
+        }
+        
+        // Compute std/range ratio
+        double std_range_ratio = stds[d] / range;
+        
+        if (std_range_ratio == 0.0) {
+            throw std::runtime_error("Standard deviation is zero in dimension " + std::to_string(d));
+        }
+        
+        // Take reciprocal for weight (larger reciprocal = more weight)
+        weights[d] = 1.0 / std_range_ratio;
+    }
+    
+    // Normalize weights to sum to 1
     double sum = 0.0;
-    for (size_t d = 0; d < D; ++d) {
-        if (stds[d] == 0.0) throw std::runtime_error("Standard deviation is zero in dimension.");
-        inv_std[d] = 1.0 / stds[d];
-        sum += inv_std[d];
+    for (double w : weights) {
+        sum += w;
     }
-
-    for (size_t d = 0; d < D; ++d) {
-        inv_std[d] /= sum;  // normalize so weights sum to 1
+    
+    if (sum == 0.0) {
+        throw std::runtime_error("Sum of weights is zero.");
     }
-
-    return inv_std;
+    
+    for (size_t d = 0; d < D; ++d) {
+        weights[d] /= sum;
+    }
+    
+    return weights;
 }

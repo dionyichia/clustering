@@ -9,7 +9,7 @@ double distance(
     const Point& b,
     DistanceMetric metric,
     float p,
-    const std::vector<double>* weights = nullptr
+    const std::vector<double>* weights
 ) {
     assert(a.size() == b.size());
     const size_t D = a.size();

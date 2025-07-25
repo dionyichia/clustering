@@ -22,3 +22,8 @@ readPointsFromFile(const std::string& filename,
 void printUsage(char* prog);
 
 std::vector<double> computeNormalizedInverseStdDevWeights(const std::vector<Point>& points);
+double computePercentile(std::vector<double> values, double percentile);
+std::vector<double> computeNormalizedStdRangeWeights(
+    const std::vector<Point>& points,
+    const std::vector<double>& stds
+);
