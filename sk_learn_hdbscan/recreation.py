@@ -389,8 +389,60 @@ def condense_tree(hierarchy, min_cluster_size=10):
     return np.array(result_list, dtype=CONDENSED_dtype)
 
 
-import numpy as np
-from collections import deque
+def compute_stability(condensed_tree):
+    """
+    Compute stability for clusters from a condensed tree.
+    
+    Parameters:
+    condensed_tree : numpy structured array
+        Array with fields 'parent', 'child', 'value', 'cluster_size'
+    
+    Returns:
+    dict : stability values keyed by cluster id
+    """
+    # Extract arrays from structured array
+    parents = condensed_tree['parent']
+    children = condensed_tree['child']
+    values = condensed_tree['value']
+    cluster_sizes = condensed_tree['cluster_size']
+    
+    # Find bounds
+    largest_child = children.max()
+    smallest_cluster = parents.min()
+    num_clusters = parents.max() - smallest_cluster + 1
+    
+    largest_child = max(largest_child, smallest_cluster)
+    
+    # Initialize births array with NaN
+    births = np.full(largest_child + 1, np.nan, dtype=np.float64)
+    
+    # Fill births array - birth time is when a node first appears as a child
+    for i in range(len(condensed_tree)):
+        child = condensed_tree[i]['child']
+        births[child] = condensed_tree[i]['value']
+    
+    # Root cluster birth time is 0
+    births[smallest_cluster] = 0.0
+    
+    # Initialize result array
+    result = np.zeros(num_clusters, dtype=np.float64)
+    
+    # Compute stability for each cluster
+    for i in range(len(condensed_tree)):
+        parent = condensed_tree[i]['parent']
+        lambda_val = condensed_tree[i]['value']
+        cluster_size = condensed_tree[i]['cluster_size']
+        
+        result_index = parent - smallest_cluster
+        result[result_index] += (lambda_val - births[parent]) * cluster_size
+    
+    # Build final dictionary
+    stability_dict = {}
+    for i in range(num_clusters):
+        stability_dict[i + smallest_cluster] = result[i]
+    
+    return stability_dict
+
 
 def _get_clusters(
     condensed_tree,
