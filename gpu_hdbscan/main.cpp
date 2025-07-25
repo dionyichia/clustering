@@ -22,7 +22,7 @@ bool quiet_mode = false;
 // Replace all std::cout statements with conditional output:
 #define DEBUG_PRINT(x) if (!quiet_mode) { std::cout << x; }
 
-// void writeKNNGraph(const std::string& filename,
+// void writeMRDGraph(const std::string& filename,
 //                    const std::vector<std::vector<std::pair<int, double>>>& knn_graph) {
 //     std::ofstream out(filename);
 //     if (!out.is_open()) {
@@ -396,7 +396,7 @@ int main(int argc, char** argv) {
   if (!quiet_mode) {
         printAndVerifyMutualReachability(points, core_dist, knn_graph, metric, minkowskiP);
     }
-//   writeKNNGraph("knn_graph_output.csv", knn_graph);
+//   writeMRDGraph("mrd_graph_output.csv", knn_graph);
   // After you've built your knn_graph and converted to mutual reachability
   std::vector<Edge> all_edges = flatten(knn_graph);
   // Now you can sort by weight if needed
