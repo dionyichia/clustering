@@ -260,6 +260,20 @@ def bfs_from_hierarchy(hierarchy, root):
     
     return result
 
+# SAMPLE USAGE FOR CONDENSE_TREE
+"""
+    # Create sample hierarchy data
+    # This would typically come from scipy.cluster.hierarchy.linkage
+    sample_hierarchy = np.array([
+        (0, 1, 0.1, 2),  # merge nodes 0,1 at distance 0.1, cluster size 2
+        (2, 4, 0.2, 3),  # merge node 2 with cluster 4 at distance 0.2, size 3  
+        (3, 5, 0.5, 4),  # final merge at distance 0.5, total size 4
+    ], dtype=HIERARCHY_dtype)
+    
+    condensed = condense_tree(sample_hierarchy, min_cluster_size=2)
+    print("Condensed tree:")
+    print(condensed)
+"""
 def condense_tree(hierarchy, min_cluster_size=10):
     """
     Condense a tree according to a minimum cluster size. This is akin
