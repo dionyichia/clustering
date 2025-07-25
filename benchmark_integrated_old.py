@@ -58,7 +58,7 @@ class GPUHDBSCANWrapper:
             "--minclustersize",  str(min_cluster_size),
             "--clusterMethod",   str(cluster_method),
             "--skip-toa",
-            "--skip-amp"
+            "--skip-amp",
         ]
         if quiet_mode:
             cmd.append("--quiet")
@@ -710,7 +710,7 @@ def run_benchmark_with_visualization_batched(
     gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
     
     # Test parameters
-    min_samples = 3
+    min_samples = 5
     min_cluster_size = 20
     quiet_mode = True
     timeout = 5 * 60  # 5 minute timeout 
@@ -743,28 +743,18 @@ def run_benchmark_with_visualization_batched(
     
     # Find Optimal Parameters for DBSCAN and HDBSCAN
     # 3) Loop over each batch file
-    # less_than_6 = True
-
     for i, csv_file in enumerate(csv_paths):
         batch_filename = os.path.basename(csv_file)
         batch_name = os.path.splitext(os.path.basename(csv_file))[0]
-
-        #if 'Batch_6' in batch_name:
-         #    print(f"Skipping {batch_filename}")
-        #     less_than_6 = False
-
-        #elif less_than_6:
-         #    continue
         
         print(f"\n=== Processing batch {i+1}/{len(csv_paths)}: {batch_name} ===")
         log_memory_usage("start of batch")
         
         if batch_filename not in dbscan_params:
-            print(f"No dbscan parameters found for {batch_filename}, using default params...")
-        
+            print(f"No DBSCAN parameters found for {batch_filename}, skipping...")
+            
             min_samples = 5
             epsilon = 0.38
-
         else:
             min_samples, epsilon = dbscan_params[batch_filename]
 
@@ -780,10 +770,10 @@ def run_benchmark_with_visualization_batched(
             # log_memory_usage("after reading CSV")
 
             # Try finding min points per emitter from all unique emitters in batch
-           # try: 
-		#  min_cluster_size = max(20, find_min_points_per_emitter(df, emitter_col))
-        #    except Exception as e:
-         #       print(f"Error processing file: {e}")
+            try: 
+                min_cluster_size = max(20, find_min_points_per_emitter(df, emitter_col))
+            except Exception as e:
+                print(f"Error processing file: {e}")
 
             if use_amp: feature_cols.append('Amp_S0(dBm)')
             if use_toa: feature_cols.append('TOA(ns)')
@@ -843,13 +833,12 @@ def run_benchmark_with_visualization_batched(
                 gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
                     gpu_hdbscan.fit_predict_batched, 
                     csv_file,
-                    dims,
+                    dims,``
                     min_samples=min_samples,
                     min_cluster_size=min_cluster_size,
                     quiet_mode=quiet_mode,
                     timeout=timeout
                 )
-
             log_memory_usage("after GPU HDBSCAN")
             
             # sklearn HDBSCAN for comparison
@@ -858,12 +847,10 @@ def run_benchmark_with_visualization_batched(
                 sklearn_model,sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = None,None, timeout, 0, True
             else:
                 if use_leaf:
-                    sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size,metric='euclidean',algorithm='kd_tree', cluster_selection_method='leaf')
+                    sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size)
                 else:
-                    sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size,metric='euclidean',algorithm='kd_tree')
-#                sklearn_model = sklearn_model.fit(X)
-#                print(f"Algorithm:{sklearn_model.algorithm}")
-#                print(f"Metric:{sklearn_model.metric}")
+                    sklearn_model = HDBSCAN(min_samples=min_samples, min_cluster_size=min_cluster_size, cluster_selection_method='leaf')
+
                 sklearn_labels, sklearn_time, sklearn_memory, sklearn_timeout = track_performance_with_timeout(
                     sklearn_model.fit_predict, X, timeout=timeout
                 )
@@ -910,54 +897,45 @@ def run_benchmark_with_visualization_batched(
             )
             evaluation_results.append(eval_results)
 
-            if batch_name == 'Data_Batch_4_40_emitters_200000_samples':
-
+            # Create labels DataFrame with original features for visualization
+            if 'Data_Batch_4' in batch_name:
                 labels_df = pd.DataFrame(X, columns=feature_cols)
                 labels_df['True_Labels'] = true_labels
 
+                # Add algorithm labels (handle None/timeout cases)
                 if gpu_labels is not None and not gpu_timeout:
                     labels_df['GPU_HDBSCAN_Labels'] = gpu_labels
                 else:
-                    labels_df['GPU_HDBSCAN_Labels'] = -1
+                    labels_df['GPU_HDBSCAN_Labels'] = -1  # or np.nan
 
                 if sklearn_labels is not None and not sklearn_timeout:
                     labels_df['Sklearn_HDBSCAN_Labels'] = sklearn_labels
                 else:
-                    labels_df['Sklearn_HDBSCAN_Labels'] = -1
+                    labels_df['Sklearn_HDBSCAN_Labels'] = -1  # or np.nan
 
                 if dbscan_labels is not None and not dbscan_timeout:
                     labels_df['DBSCAN_Labels'] = dbscan_labels
                 else:
-                    labels_df['DBSCAN_Labels'] = -1
+                    labels_df['DBSCAN_Labels'] = -1  # or np.nan
 
-                labels_output_path = os.path.join(output_dir, f'{batch_name}_labels.csv')
-                labels_output_path = labels_df.to_csv(labels_output_path, index=False)
+                # Add timing information for reference
+                labels_df['Start_Time'] = start_time
+                labels_df['End_Time'] = end_time
 
+                # Save to CSV
+                labels_output_path = os.path.join(output_dir, f"{batch_name}_labels.csv")
+                labels_df.to_csv(labels_output_path, index=False)
+                print(f"  -> Saved labels to: {labels_output_path}")
+
+                # Clean up the labels DataFrame
                 del labels_df
-
-            # output_dir = f"labels_n_summary_{batch_filename}"
-            # os.makedirs(output_dir, exist_ok=True)
-
-            # # Save gpu labels
-            # gpu_results_df = pd.DataFrame(gpu_labels)
-            # gpu_results_df.to_csv(os.path.join(output_dir, 'gpu_labels.csv'), index=False)
-
-            # sklearn_results_df = pd.DataFrame(sklearn_labels)
-            # sklearn_results_df.to_csv(os.path.join(output_dir, 'hdbscan_labels.csv'), index=False)
-
-            # dbscan_results_df = pd.DataFrame(dbscan_labels)
-            # dbscan_results_df.to_csv(os.path.join(output_dir, 'dbscan_labels.csv'), index=False)
-
-            # # Create and save clustering statistics summary 
-            # print("Creating cluster summary...")
-            # summary_df = per_cluster_statistics_summary(X, gpu_labels, feature_cols)
-            # summary_df.to_csv(os.path.join(output_dir, 'gpu_clustering_summary.csv'), index=False)
+                gc.collect()
             
             # collect performance results 
             result = {
                 'Batch': batch_name,
                 'Samples': n_samples,
-                'Emitters': num_emitters,
+                'Emitters':    num_emitters,
                 'GPU_Time': gpu_time,
                 'Sklearn_Time': sklearn_time,
                 'DBSCAN_Time': dbscan_time,
@@ -1124,7 +1102,6 @@ def run_speed_to_samples_benchmark(data_path, executable_path="./gpu_hdbscan_edi
     min_samples = 5
     epsilon = 0.39
     quiet_mode = True
-    use_eom = True
 
     # Initialize algorithm wrapper
     gpu_hdbscan = GPUHDBSCANWrapper(executable_path=executable_path)
@@ -1166,27 +1143,15 @@ def run_speed_to_samples_benchmark(data_path, executable_path="./gpu_hdbscan_edi
         temp_csv_file = create_temp_csv(sub_df)
         
         # Track timing & memory around that call
-        if (use_eom):
-            gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
-                gpu_hdbscan.fit_predict_batched, 
-                temp_csv_file,
-                dims,
-                min_samples=min_samples,
-                min_cluster_size=min_cluster_size,
-                quiet_mode=quiet_mode,
-                timeout=timeout
-            )
-        else:
-             gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
-                gpu_hdbscan.fit_predict_batched, 
-                temp_csv_file,
-                dims,
-                min_samples=min_samples,
-                min_cluster_size=min_cluster_size,
-                cluster_method=2,
-                quiet_mode=quiet_mode,
-                timeout=timeout
-            )
+        gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
+            gpu_hdbscan.fit_predict_batched, 
+            temp_csv_file,
+            dims,
+            min_samples=min_samples,
+            min_cluster_size=min_cluster_size,
+            quiet_mode=quiet_mode,
+            timeout=timeout
+        )
         
         # Clean up temp file
         if os.path.exists(temp_csv_file):
@@ -1271,10 +1236,10 @@ if __name__ == "__main__":
     batch_by_num_emitters = False
     batch_by_emitter_n_toa = True
 
-    use_leaf = False
-
     data_path = "./data/pdwInterns_with_latlng.csv"
     batch_path = "./data/batch_data"
+
+    use_leaf = False
 
     if not os.path.exists(data_path):
         print(f"Date file not found at {data_path}")
@@ -1289,11 +1254,11 @@ if __name__ == "__main__":
     else:
         # if data path provided will use data file else will generate 2d data.
         if use_lat_lng:
-            std_array = [1.0, 0.21, 0.2, 0.2, 0.1, 0.1] 
+            std_array = [1.0, 0.00021, 0.2, 0.2, 0.1, 0.1] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
         else:
-            std_array = [1.0, 0.21, 0.2, 0.2] 
+            std_array = [1.0, 0.00021, 0.2, 0.2] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
         
@@ -1317,13 +1282,14 @@ if __name__ == "__main__":
                 batch_path = './data/batch_data_no_jitter_by_emitter_n_time'
             else:
                 batch_path = "./data/batch_data_no_jitter"
+            
 
         if add_jitter and not os.path.exists(noisy_data_path):
             print(f"Noisy Data not found at {noisy_data_path}")
             noisy_data_path = add_gaussian_noise(data_path, std_map=std_map)
         
         if not os.path.exists(batch_path):
-            if batch_by_num_emitters and add_jitter:
+            if batch_by_num_emitters:
                 emitters_per_batch = [10,20,30,40,50,60,70,80,90,100]
                 data = batch_data_by_emitters(data_path=noisy_data_path, emitters_per_batch_list = emitters_per_batch, assume_sorted = True)
             
@@ -1334,35 +1300,23 @@ if __name__ == "__main__":
 
                 os.makedirs(batch_path, exist_ok=True)  # Create if it doesn't exist
 
-                max_samples = 100000
+                max_samples = 200000
 
-                if add_jitter:
-                    for i, num_emitters in emitter_list:
-                        output_filename = f"Data_Batch_{i+1}_{num_emitters}_emitters_{max_samples}_samples.csv"
-                        output_path = os.path.join(batch_path, output_filename)
-                        
-                        batch_data_by_emitters_fixed_samples(
-                            data_path=noisy_data_path,
-                            num_emitters=num_emitters,
-                            max_samples=max_samples,
-                            output_path=output_path
-                        )
-                else:
-                    for i, num_emitters in emitter_list:
-                        output_filename = f"Data_Batch_{i+1}_{num_emitters}_emitters_{max_samples}_samples.csv"
-                        output_path = os.path.join(batch_path, output_filename)
-                        
-                        batch_data_by_emitters_fixed_samples(
-                            data_path=data_path,
-                            num_emitters=num_emitters,
-                            max_samples=max_samples,
-                            output_path=output_path
-                        )
+                for i, num_emitters in emitter_list:
+                    output_filename = f"Data_Batch_{i+1}_{num_emitters}_emitters_{max_samples}_samples.csv"
+                    output_path = os.path.join(batch_path, output_filename)
+                    
+                    batch_data_by_emitters_fixed_samples(
+                        data_path="./data/noisy_pdwInterns_with_latlng.csv",
+                        num_emitters=num_emitters,
+                        max_samples=200000,
+                        output_path=output_path
+                    )
             
             else:# Chunk size can be taken as the maximum number of points in a batch
                 data = batch_data(data_path=noisy_data_path, batch_interval=batch_interval, chunk_size=200000, assume_sorted=True)
 
-        print("batch path: ", batch_path)
+        print("Using batch path: ", batch_path)
         results, eval_results  = run_benchmark_with_visualization_batched(data_path=batch_path,executable_path=executable_path,use_amp=False,use_toa=False, use_lat_lng=use_lat_lng, use_leaf=use_leaf) 
         print(f"\nBenchmark complete! Results saved to 'gpu_hdbscan_benchmark_results.csv'")
         print("Plots saved to 'gpu_hdbscan_benchmark.png'")
