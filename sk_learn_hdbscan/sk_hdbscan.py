@@ -51,7 +51,7 @@ from scipy.sparse import csgraph, issparse
 from sklearn.base import BaseEstimator, ClusterMixin
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import BallTree, KDTree, NearestNeighbors
-from .utils._param_validation import Interval, StrOptions
+from utils._param_validation import Interval, StrOptions
 
 from recreation import (
     make_single_linkage,
@@ -997,3 +997,17 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
     #     tags.input_tags.sparse = True
     #     tags.input_tags.allow_nan = self.metric != "precomputed"
     #     return tags
+import pandas as pd
+
+if __name__ == '__main__':
+    df_noisy = pd.read_csv("../data/Data_Batch_1_10_emitters_100000_samples.csv")
+
+    # Extract features for dimensionality reduction
+    features = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
+    X = df_noisy[features].values
+    X = X[:1000]
+
+    sklearn_model = HDBSCAN(min_samples=5, min_cluster_size=20, metric='euclidean', algorithm='kd_tree')
+    sklearn_labels = sklearn_model.fit_predict(X)
+
+    print("Clustering complete. Labels:", sklearn_labels[:10])  # Show sample output

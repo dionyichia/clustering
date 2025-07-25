@@ -592,6 +592,55 @@ def _get_clusters(
 
     return (labels, probs)
 
+def tree_to_labels(
+    single_linkage_tree,
+    min_cluster_size=10,
+    cluster_selection_method="eom",
+    allow_single_cluster=False,
+    cluster_selection_epsilon=0.0,
+    max_cluster_size=None,
+):
+    """
+    Convert a single linkage tree to cluster labels and probabilities.
+    
+    Parameters:
+    -----------
+    single_linkage_tree : array-like
+        The single linkage tree (hierarchy) to process
+    min_cluster_size : int, default=10
+        Minimum size of clusters to consider
+    cluster_selection_method : str, default="eom"
+        Method for cluster selection
+    allow_single_cluster : bool, default=False
+        Whether to allow single cluster solutions
+    cluster_selection_epsilon : float, default=0.0
+        Epsilon parameter for cluster selection
+    max_cluster_size : int or None, default=None
+        Maximum size of clusters to consider
+    
+    Returns:
+    --------
+    tuple
+        (labels, probabilities) where labels is array of cluster assignments
+        and probabilities is array of membership probabilities
+    """
+    # Condense the tree based on minimum cluster size
+    condensed_tree = condense_tree(single_linkage_tree, min_cluster_size)
+    
+    # Compute stability scores for the condensed tree
+    stability_scores = compute_stability(condensed_tree)
+    
+    # Get clusters based on the condensed tree and stability
+    labels, probabilities = _get_clusters(
+        condensed_tree,
+        stability_scores,
+        cluster_selection_method,
+        allow_single_cluster,
+        cluster_selection_epsilon,
+        max_cluster_size,
+    )
+    
+    return (labels, probabilities)
 
 def bfs_from_cluster_tree(cluster_tree, bfs_root):
     """Breadth-first search from a given root node in the cluster tree."""
