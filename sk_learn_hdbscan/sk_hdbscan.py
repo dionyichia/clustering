@@ -54,12 +54,18 @@ from sklearn.neighbors import BallTree, KDTree, NearestNeighbors
 from .utils._param_validation import Interval, StrOptions
 
 from recreation import (
-    MST_edge_dtype,
     make_single_linkage,
     mst_from_data_matrix
 )
 # from recreation import mutual_reachability_graph
-from recreation import HIERARCHY_dtype, tree_to_labels
+from recreation import tree_to_labels
+
+HIERARCHY_dtype = np.dtype([
+    ("left_node", np.intp),
+    ("right_node", np.intp),
+    ("value", np.float64),
+    ("cluster_size", np.intp),
+])
 
 _VALID_METRICS = [
     "euclidean",
@@ -109,7 +115,6 @@ _OUTLIER_ENCODING: dict = {
         "prob": np.nan,
     },
 }
-
 
 # def _brute_mst(mutual_reachability, min_samples):
 #     """
@@ -381,10 +386,10 @@ def _hdbscan_prims(
 
     neighbors_distances, _ = nbrs.kneighbors(X, min_samples, return_distance=True)
     core_distances = np.ascontiguousarray(neighbors_distances[:, -1])
-    dist_metric = DistanceMetric.get_metric(metric, **metric_params)
+    # dist_metric = DistanceMetric.get_metric(metric, **metric_params) 
 
     # Mutual reachability distance is implicit in mst_from_data_matrix
-    min_spanning_tree = mst_from_data_matrix(X, core_distances, dist_metric, alpha)
+    min_spanning_tree = mst_from_data_matrix(X, core_distances, alpha)
     return _process_mst(min_spanning_tree)
 
 

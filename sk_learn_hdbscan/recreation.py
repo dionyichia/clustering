@@ -387,3 +387,338 @@ def condense_tree(hierarchy, min_cluster_size=10):
                         ignore[j] = True
     
     return np.array(result_list, dtype=CONDENSED_dtype)
+
+
+import numpy as np
+from collections import deque
+
+def _get_clusters(
+    condensed_tree,
+    stability,
+    cluster_selection_method='eom',
+    allow_single_cluster=False,
+    cluster_selection_epsilon=0.0,
+    max_cluster_size=None
+):
+    """Given a tree and stability dict, produce the cluster labels
+    (and probabilities) for a flat clustering based on the chosen
+    cluster selection method.
+
+    Parameters
+    ----------
+    condensed_tree : ndarray of shape (n_samples,), dtype=structured array
+        Effectively an edgelist encoding a parent/child pair, along with a
+        value and the corresponding cluster_size in each row providing a tree
+        structure.
+
+    stability : dict
+        A dictionary mapping cluster_ids to stability values
+
+    cluster_selection_method : string, optional (default 'eom')
+        The method of selecting clusters. The default is the
+        Excess of Mass algorithm specified by 'eom'. The alternate
+        option is 'leaf'.
+
+    allow_single_cluster : boolean, optional (default False)
+        Whether to allow a single cluster to be selected by the
+        Excess of Mass algorithm.
+
+    cluster_selection_epsilon: float, optional (default 0.0)
+        A distance threshold for cluster splits.
+
+    max_cluster_size: int, default=None
+        The maximum size for clusters located by the EOM clusterer. Can
+        be overridden by the cluster_selection_epsilon parameter in
+        rare cases.
+
+    Returns
+    -------
+    labels : ndarray of shape (n_samples,)
+        An integer array of cluster labels, with -1 denoting noise.
+
+    probabilities : ndarray (n_samples,)
+        The cluster membership strength of each sample.
+
+    stabilities : ndarray (n_clusters,)
+        The cluster coherence strengths of each cluster.
+    """
+    
+    # Assume clusters are ordered by numeric id equivalent to
+    # a topological sort of the tree
+    if allow_single_cluster:
+        node_list = sorted(stability.keys(), reverse=True)
+    else:
+        node_list = sorted(stability.keys(), reverse=True)[:-1]  # exclude root
+
+    cluster_tree = condensed_tree[condensed_tree['cluster_size'] > 1]
+    is_cluster = {cluster: True for cluster in node_list}
+    n_samples = np.max(condensed_tree[condensed_tree['cluster_size'] == 1]['child']) + 1
+
+    if max_cluster_size is None:
+        max_cluster_size = n_samples + 1  # Set to a value that will never be triggered
+    
+    cluster_sizes = {
+        child: cluster_size for child, cluster_size
+        in zip(cluster_tree['child'], cluster_tree['cluster_size'])
+    }
+    
+    if allow_single_cluster:
+        # Compute cluster size for the root node
+        cluster_sizes[node_list[-1]] = np.sum(
+            cluster_tree[cluster_tree['parent'] == node_list[-1]]['cluster_size'])
+
+    if cluster_selection_method == 'eom':
+        for node in node_list:
+            child_selection = (cluster_tree['parent'] == node)
+            subtree_stability = np.sum([
+                stability[child] for
+                child in cluster_tree['child'][child_selection]])
+            
+            if subtree_stability > stability[node] or cluster_sizes[node] > max_cluster_size:
+                is_cluster[node] = False
+                stability[node] = subtree_stability
+            else:
+                for sub_node in bfs_from_cluster_tree(cluster_tree, node):
+                    if sub_node != node:
+                        is_cluster[sub_node] = False
+
+        if cluster_selection_epsilon != 0.0 and len(cluster_tree) > 0:
+            eom_clusters = [c for c in is_cluster if is_cluster[c]]
+            selected_clusters = []
+            # first check if eom_clusters only has root node, which skips epsilon check.
+            if (len(eom_clusters) == 1 and eom_clusters[0] == cluster_tree['parent'].min()):
+                if allow_single_cluster:
+                    selected_clusters = eom_clusters
+            else:
+                selected_clusters = epsilon_search(
+                    set(eom_clusters),
+                    cluster_tree,
+                    cluster_selection_epsilon,
+                    allow_single_cluster
+                )
+            for c in is_cluster:
+                if c in selected_clusters:
+                    is_cluster[c] = True
+                else:
+                    is_cluster[c] = False
+
+    elif cluster_selection_method == 'leaf':
+        leaves = set(get_cluster_tree_leaves(cluster_tree))
+        if len(leaves) == 0:
+            for c in is_cluster:
+                is_cluster[c] = False
+            is_cluster[condensed_tree['parent'].min()] = True
+
+        if cluster_selection_epsilon != 0.0:
+            selected_clusters = epsilon_search(
+                leaves,
+                cluster_tree,
+                cluster_selection_epsilon,
+                allow_single_cluster
+            )
+        else:
+            selected_clusters = leaves
+
+        for c in is_cluster:
+            if c in selected_clusters:
+                is_cluster[c] = True
+            else:
+                is_cluster[c] = False
+
+    clusters = set([c for c in is_cluster if is_cluster[c]])
+    cluster_map = {c: n for n, c in enumerate(sorted(list(clusters)))}
+    reverse_cluster_map = {n: c for c, n in cluster_map.items()}
+
+    labels = _do_labelling(
+        condensed_tree,
+        clusters,
+        cluster_map,
+        allow_single_cluster,
+        cluster_selection_epsilon
+    )
+    probs = get_probabilities(condensed_tree, reverse_cluster_map, labels)
+
+    return (labels, probs)
+
+
+def bfs_from_cluster_tree(cluster_tree, bfs_root):
+    """Breadth-first search from a given root node in the cluster tree."""
+    result = []
+    process_queue = np.array([bfs_root], dtype=int)
+    children = cluster_tree['child']
+    parents = cluster_tree['parent']
+    
+    while len(process_queue) > 0:
+        result.extend(process_queue.tolist())
+        process_queue = children[np.isin(parents, process_queue)]
+    
+    return result
+
+
+def get_cluster_tree_leaves(cluster_tree):
+    """Get the leaf nodes of the cluster tree."""
+    if len(cluster_tree) == 0:
+        return []
+    root = cluster_tree['parent'].min()
+    return recurse_leaf_dfs(cluster_tree, root)
+
+
+def epsilon_search(leaves, cluster_tree, cluster_selection_epsilon, allow_single_cluster):
+    """Search for clusters within epsilon distance threshold."""
+    selected_clusters = []
+    processed = []
+    children = cluster_tree['child']
+    distances = cluster_tree['value']
+    
+    for leaf in leaves:
+        leaf_nodes = children == leaf
+        eps = 1 / distances[leaf_nodes][0]
+        if eps < cluster_selection_epsilon:
+            if leaf not in processed:
+                epsilon_child = traverse_upwards(
+                    cluster_tree,
+                    cluster_selection_epsilon,
+                    leaf,
+                    allow_single_cluster
+                )
+                selected_clusters.append(epsilon_child)
+                for sub_node in bfs_from_cluster_tree(cluster_tree, epsilon_child):
+                    if sub_node != epsilon_child:
+                        processed.append(sub_node)
+        else:
+            selected_clusters.append(leaf)
+    
+    return set(selected_clusters)
+
+import numpy as np
+
+def max_lambdas(condensed_tree):
+    """Calculate maximum lambda values for each cluster."""
+    # Find the largest parent ID to size the deaths array
+    largest_parent = condensed_tree['parent'].max()
+    deaths = np.zeros(largest_parent + 1, dtype=np.float64)
+    
+    # Initialize with first element
+    current_parent = condensed_tree[0]['parent']
+    max_lambda = condensed_tree[0]['value']
+    
+    # Iterate through the condensed tree starting from index 1
+    for idx in range(1, len(condensed_tree)):
+        parent = condensed_tree[idx]['parent']
+        lambda_val = condensed_tree[idx]['value']
+        
+        if parent == current_parent:
+            # Same parent, update max lambda
+            max_lambda = max(max_lambda, lambda_val)
+        else:
+            # New parent, store the max lambda for previous parent
+            deaths[current_parent] = max_lambda
+            current_parent = parent
+            max_lambda = lambda_val
+    
+    # Store the max lambda for the last parent
+    deaths[current_parent] = max_lambda
+    
+    return deaths
+
+
+def recurse_leaf_dfs(cluster_tree, current_node):
+    """Recursively find leaf nodes using depth-first search."""
+    # Find children of the current node
+    children = cluster_tree[cluster_tree['parent'] == current_node]['child']
+    
+    if len(children) == 0:
+        # No children, this is a leaf node
+        return [current_node]
+    else:
+        # Has children, recursively get leaves from each child
+        leaves = []
+        for child in children:
+            leaves.extend(recurse_leaf_dfs(cluster_tree, child))
+        return leaves
+
+
+def traverse_upwards(cluster_tree, cluster_selection_epsilon, leaf, allow_single_cluster):
+    """Traverse upwards in the tree to find appropriate cluster within epsilon."""
+    # Find the root of the tree
+    root = cluster_tree['parent'].min()
+    
+    # Find the parent of the current leaf
+    parent_mask = cluster_tree['child'] == leaf
+    if not np.any(parent_mask):
+        return leaf  # No parent found, return the leaf itself
+    
+    parent = cluster_tree[parent_mask]['parent'][0]
+    
+    # If parent is root, handle based on allow_single_cluster flag
+    if parent == root:
+        if allow_single_cluster:
+            return parent
+        else:
+            return leaf  # return node closest to root
+    
+    # Calculate parent epsilon (1 / lambda value)
+    parent_mask = cluster_tree['child'] == parent
+    if not np.any(parent_mask):
+        return leaf  # No parent info found
+    
+    parent_eps = 1.0 / cluster_tree[parent_mask]['value'][0]
+    
+    # Check if parent epsilon is within the threshold
+    if parent_eps > cluster_selection_epsilon:
+        return parent
+    else:
+        # Recursively traverse upwards
+        return traverse_upwards(
+            cluster_tree,
+            cluster_selection_epsilon,
+            parent,
+            allow_single_cluster
+        )
+
+
+def get_probabilities(condensed_tree, cluster_map, labels):
+    """Calculate cluster membership probabilities."""
+    # Extract arrays from the structured array
+    child_array = condensed_tree['child']
+    parent_array = condensed_tree['parent']
+    lambda_array = condensed_tree['value']
+    
+    # Initialize result array
+    result = np.zeros(labels.shape[0], dtype=np.float64)
+    
+    # Get death lambdas for all clusters
+    deaths = max_lambdas(condensed_tree)
+    
+    # Find the root cluster
+    root_cluster = np.min(parent_array)
+    
+    # Process each entry in the condensed tree
+    for n in range(len(condensed_tree)):
+        point = child_array[n]
+        
+        # Skip if point is a cluster (>= root_cluster)
+        if point >= root_cluster:
+            continue
+        
+        # Get the cluster number for this point
+        cluster_num = labels[point]
+        
+        # Skip noise points (cluster -1)
+        if cluster_num == -1:
+            continue
+        
+        # Get the actual cluster ID from the cluster map
+        cluster = cluster_map[cluster_num]
+        
+        # Get the maximum lambda for this cluster
+        max_lambda = deaths[cluster]
+        
+        # Calculate probability
+        if max_lambda == 0.0 or np.isinf(lambda_array[n]):
+            result[point] = 1.0
+        else:
+            lambda_val = min(lambda_array[n], max_lambda)
+            result[point] = lambda_val / max_lambda
+    
+    return result
