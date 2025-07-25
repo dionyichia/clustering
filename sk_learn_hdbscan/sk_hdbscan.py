@@ -452,7 +452,7 @@ def _get_finite_row_indices(matrix):
     return row_indices
 
 
-class HDBSCAN(ClusterMixin, BaseEstimator):
+class OHDBSCAN(ClusterMixin, BaseEstimator):
     """Cluster data using hierarchical density-based clustering.
 
     HDBSCAN - Hierarchical Density-Based Spatial Clustering of Applications
@@ -998,16 +998,41 @@ class HDBSCAN(ClusterMixin, BaseEstimator):
     #     tags.input_tags.allow_nan = self.metric != "precomputed"
     #     return tags
 import pandas as pd
+from sklearn.cluster import HDBSCAN
+
+def get_slt_array(tree):
+    # Returns a numpy array representation (children, distance, size)
+    return np.array([[node['child'], node['lambda_val'], node['size']] for node in tree.to_numpy()])
 
 if __name__ == '__main__':
     df_noisy = pd.read_csv("../data/Data_Batch_1_10_emitters_100000_samples.csv")
+
 
     # Extract features for dimensionality reduction
     features = ['PW(microsec)', 'FREQ(MHz)', 'AZ_S0(deg)', 'EL_S0(deg)']
     X = df_noisy[features].values
     X = X[:1000]
 
-    sklearn_model = HDBSCAN(min_samples=5, min_cluster_size=20, metric='euclidean', algorithm='kd_tree')
-    sklearn_labels = sklearn_model.fit_predict(X)
+    own_model = OHDBSCAN(min_samples=5, min_cluster_size=20, metric='euclidean', algorithm='kd_tree')
+    own_model_results = own_model.fit(X)
 
-    print("Clustering complete. Labels:", sklearn_labels[:10])  # Show sample output
+    print(own_model_results.labels_)
+
+    sklearn_model = HDBSCAN(min_samples=5, min_cluster_size=20, metric='euclidean', algorithm='kd_tree')
+    sklearn_labels = sklearn_model.fit(X)._single_linkage_tree_
+
+    # print(sklearn_labels)
+
+    # Probabilities
+    # print(sklearn_model.pr)
+    print(np.allclose(sklearn_model.probabilities_, own_model.probabilities_))
+
+    # print("Clustering complete", own_labels == sklearn_labels)  # Show sample output
+
+
+    # slt_sklearn = get_slt_array(sklearn_model._single_linkage_tree_)
+    # slt_own = get_slt_array(own_model._single_linkage_tree_)
+
+    # print(np.allclose(slt_sklearn, slt_own))  # or use np.array_equal for exact match
+
+
