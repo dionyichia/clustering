@@ -5,7 +5,7 @@ import os
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from scipy.spatial.distance import cdist
-
+from collections import deque
 
 def mst_from_data_matrix(raw_data, core_distances, alpha=1.0, dist_fn='euclidean'):
     """
@@ -220,3 +220,156 @@ def make_single_linkage(mst):
         U.union(current_node_cluster, next_node_cluster)
     
     return single_linkage
+
+# Assuming these are the dtype structures based on typical hierarchical clustering
+# You may need to adjust these based on your actual HIERARCHY_dtype and CONDENSED_dtype
+HIERARCHY_dtype = np.dtype([
+    ('left_node', np.intp),
+    ('right_node', np.intp), 
+    ('value', np.float64),
+    ('cluster_size', np.intp)
+])
+
+CONDENSED_dtype = np.dtype([
+    ('parent', np.intp),
+    ('child', np.intp),
+    ('lambda_val', np.float64),
+    ('child_size', np.intp)
+])
+
+def bfs_from_hierarchy(hierarchy, root):
+    """
+    Breadth-first search traversal of hierarchy tree starting from root.
+    Returns list of nodes in BFS order.
+    """
+    if root < len(hierarchy) + 1:  # leaf node
+        return [root]
+    
+    n_samples = len(hierarchy) + 1
+    queue = deque([root])
+    result = []
+    
+    while queue:
+        node = queue.popleft()
+        result.append(node)
+        
+        if node >= n_samples:  # internal node
+            children = hierarchy[node - n_samples]
+            queue.append(children['left_node'])
+            queue.append(children['right_node'])
+    
+    return result
+
+def condense_tree(hierarchy, min_cluster_size=10):
+    """
+    Condense a tree according to a minimum cluster size. This is akin
+    to the runt pruning procedure of Stuetzle. The result is a much simpler
+    tree that is easier to visualize. We include extra information on the
+    lambda value at which individual points depart clusters for later
+    analysis and computation.
+
+    Parameters
+    ----------
+    hierarchy : ndarray of shape (n_samples,), dtype=HIERARCHY_dtype
+        A single linkage hierarchy in scipy.cluster.hierarchy format.
+
+    min_cluster_size : int, optional (default 10)
+        The minimum size of clusters to consider. Clusters smaller than this
+        are pruned from the tree.
+
+    Returns
+    -------
+    condensed_tree : ndarray of shape (n_samples,), dtype=CONDENSED_dtype
+        Effectively an edgelist encoding a parent/child pair, along with a
+        value and the corresponding cluster_size in each row providing a tree
+        structure.
+    """
+    
+    root = 2 * len(hierarchy)
+    n_samples = len(hierarchy) + 1
+    next_label = n_samples + 1
+    node_list = bfs_from_hierarchy(hierarchy, root)
+    
+    # Initialize relabel array
+    relabel = np.empty(root + 1, dtype=np.intp)
+    relabel[root] = n_samples
+    result_list = []
+    ignore = np.zeros(len(node_list), dtype=bool)
+    
+    for i, node in enumerate(node_list):
+        if ignore[i] or node < n_samples:
+            continue
+            
+        children = hierarchy[node - n_samples]
+        left = children['left_node']
+        right = children['right_node'] 
+        distance = children['value']
+        
+        if distance > 0.0:
+            lambda_value = 1.0 / distance
+        else:
+            lambda_value = np.inf
+            
+        # Get cluster sizes
+        if left >= n_samples:
+            left_count = hierarchy[left - n_samples]['cluster_size']
+        else:
+            left_count = 1
+            
+        if right >= n_samples:
+            right_count = hierarchy[right - n_samples]['cluster_size']
+        else:
+            right_count = 1
+            
+        # Process based on cluster sizes
+        if left_count >= min_cluster_size and right_count >= min_cluster_size:
+            # Both children are large enough clusters
+            relabel[left] = next_label
+            next_label += 1
+            result_list.append((relabel[node], relabel[left], lambda_value, left_count))
+            
+            relabel[right] = next_label  
+            next_label += 1
+            result_list.append((relabel[node], relabel[right], lambda_value, right_count))
+            
+        elif left_count < min_cluster_size and right_count < min_cluster_size:
+            # Both children are too small - add all leaf nodes
+            for sub_node in bfs_from_hierarchy(hierarchy, left):
+                if sub_node < n_samples:
+                    result_list.append((relabel[node], sub_node, lambda_value, 1))
+                # Mark nodes in left subtree as ignored
+                for j, check_node in enumerate(node_list):
+                    if check_node == sub_node:
+                        ignore[j] = True
+                        
+            for sub_node in bfs_from_hierarchy(hierarchy, right):
+                if sub_node < n_samples:
+                    result_list.append((relabel[node], sub_node, lambda_value, 1))
+                # Mark nodes in right subtree as ignored  
+                for j, check_node in enumerate(node_list):
+                    if check_node == sub_node:
+                        ignore[j] = True
+                        
+        elif left_count < min_cluster_size:
+            # Left child too small, inherit right child's label
+            relabel[right] = relabel[node]
+            for sub_node in bfs_from_hierarchy(hierarchy, left):
+                if sub_node < n_samples:
+                    result_list.append((relabel[node], sub_node, lambda_value, 1))
+                # Mark nodes in left subtree as ignored
+                for j, check_node in enumerate(node_list):
+                    if check_node == sub_node:
+                        ignore[j] = True
+                        
+        else:
+            # Right child too small, inherit left child's label  
+            relabel[left] = relabel[node]
+            for sub_node in bfs_from_hierarchy(hierarchy, right):
+                if sub_node < n_samples:
+                    result_list.append((relabel[node], sub_node, lambda_value, 1))
+                # Mark nodes in right subtree as ignored
+                for j, check_node in enumerate(node_list):
+                    if check_node == sub_node:
+                        ignore[j] = True
+    
+    return np.array(result_list, dtype=CONDENSED_dtype)
