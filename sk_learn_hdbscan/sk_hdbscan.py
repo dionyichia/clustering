@@ -58,7 +58,7 @@ from recreation import (
     make_single_linkage,
     mst_from_data_matrix
 )
-from recreation import mutual_reachability_graph
+# from recreation import mutual_reachability_graph
 from recreation import HIERARCHY_dtype, tree_to_labels
 
 _VALID_METRICS = [
