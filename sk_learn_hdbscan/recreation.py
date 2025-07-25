@@ -8,6 +8,22 @@ from scipy.spatial.distance import cdist
 from collections import deque
 from typing import Any
 
+# Assuming these are the dtype structures based on typical hierarchical clustering
+# You may need to adjust these based on your actual HIERARCHY_dtype and CONDENSED_dtype
+HIERARCHY_dtype = np.dtype([
+    ('left_node', np.intp),
+    ('right_node', np.intp), 
+    ('value', np.float64),
+    ('cluster_size', np.intp)
+])
+
+CONDENSED_dtype = np.dtype([
+    ('parent', np.intp),
+    ('child', np.intp),
+    ('lambda_val', np.float64),
+    ('child_size', np.intp)
+])
+
 # Example usage and helper function for distance metric compatibility
 class EuclideanDistanceMetric:
     """Simple Euclidean distance metric for compatibility."""
@@ -248,66 +264,47 @@ def make_single_linkage(mst):
     ----------
     mst : ndarray of shape (n_samples - 1,)
         The MST representation of the mutual-reachability graph. The MST is
-        represented as a collection of edges. Each edge should have attributes:
-        - current_node
-        - next_node  
-        - distance
+        represented as a collection of edges. Each edge should have fields:
+        'current_node', 'next_node', and 'distance'.
     
     Returns
     -------
-    single_linkage : ndarray of shape (n_samples - 1,)
+    single_linkage : ndarray of shape (n_samples - 1,), dtype=HIERARCHY_dtype
         The single-linkage tree (dendrogram) built from the MST. Each
-        row represents:
-        - left node/cluster
-        - right node/cluster
-        - distance
-        - new cluster size
+        element of the array represents:
+        - left_node: left node/cluster
+        - right_node: right node/cluster  
+        - value: distance
+        - cluster_size: new cluster size
     """
     # Note mst.shape[0] is one fewer than the number of samples
     n_samples = mst.shape[0] + 1
+    
+    # Initialize Union-Find structure
     U = UnionFind(n_samples)
     
-    # Create structured array for single linkage output
-    # Assuming HIERARCHY_dtype structure based on usage
-    dtype = [('left_node', np.intp), 
-             ('right_node', np.intp), 
-             ('value', np.float64), 
-             ('cluster_size', np.intp)]
-    
-    single_linkage = np.zeros(n_samples - 1, dtype=dtype)
+    # Initialize output array
+    single_linkage = np.zeros(n_samples - 1, dtype=HIERARCHY_dtype)
     
     for i in range(n_samples - 1):
-        current_node = mst[i]['current_node']  # or mst[i].current_node if using structured array
-        next_node = mst[i]['next_node']        # or mst[i].next_node
-        distance = mst[i]['distance']          # or mst[i].distance
+        current_node = mst[i]['current_node']
+        next_node = mst[i]['next_node']
+        distance = mst[i]['distance']
         
+        # Find cluster representatives
         current_node_cluster = U.fast_find(current_node)
         next_node_cluster = U.fast_find(next_node)
         
+        # Store linkage information
         single_linkage[i]['left_node'] = current_node_cluster
         single_linkage[i]['right_node'] = next_node_cluster
         single_linkage[i]['value'] = distance
         single_linkage[i]['cluster_size'] = U.size[current_node_cluster] + U.size[next_node_cluster]
         
+        # Union the clusters
         U.union(current_node_cluster, next_node_cluster)
     
     return single_linkage
-
-# Assuming these are the dtype structures based on typical hierarchical clustering
-# You may need to adjust these based on your actual HIERARCHY_dtype and CONDENSED_dtype
-HIERARCHY_dtype = np.dtype([
-    ('left_node', np.intp),
-    ('right_node', np.intp), 
-    ('value', np.float64),
-    ('cluster_size', np.intp)
-])
-
-CONDENSED_dtype = np.dtype([
-    ('parent', np.intp),
-    ('child', np.intp),
-    ('lambda_val', np.float64),
-    ('child_size', np.intp)
-])
 
 def bfs_from_hierarchy(hierarchy, root):
     """
