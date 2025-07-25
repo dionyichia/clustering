@@ -22,10 +22,11 @@ MST_edge_dtype = np.dtype([
     ("next_node", np.int64),
     ("distance", np.float64),
 ])
+
 def mst_from_data_matrix(
     raw_data: np.ndarray,
     core_distances: np.ndarray,
-    dist_metric = EuclideanDistanceMetric,
+    dist_metric = EuclideanDistanceMetric(),
     alpha: float = 1.0
 ) -> np.ndarray:
     """Compute the Minimum Spanning Tree (MST) representation of the mutual-
@@ -142,9 +143,6 @@ def mst_from_data_matrix(
         current_node = new_node
     
     return mst
-
-
-
 
 def mrd(n_neighbors,X):
     # Fit sklearn NearestNeighbors model

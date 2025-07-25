@@ -389,7 +389,7 @@ def _hdbscan_prims(
     # dist_metric = DistanceMetric.get_metric(metric, **metric_params) 
 
     # Mutual reachability distance is implicit in mst_from_data_matrix
-    min_spanning_tree = mst_from_data_matrix(X, core_distances, alpha)
+    min_spanning_tree = mst_from_data_matrix(X, core_distances, alpha=alpha)
     return _process_mst(min_spanning_tree)
 
 
