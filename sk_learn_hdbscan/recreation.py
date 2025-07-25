@@ -255,6 +255,89 @@ class UnionFind:
             p, self.parent[p] = self.parent[p], n
         return n
 
+def do_labelling(condensed_tree, clusters, cluster_label_map, 
+                allow_single_cluster, cluster_selection_epsilon):
+    """Given a condensed tree, clusters and a labeling map for the clusters,
+    return an array containing the labels of each point based on cluster
+    membership. Note that this is where points may be marked as noisy
+    outliers. The determination of some points as noise is in large, single-
+    cluster datasets is controlled by the `allow_single_cluster` and
+    `cluster_selection_epsilon` parameters.
+    
+    Parameters
+    ----------
+    condensed_tree : ndarray of shape (n_samples,), dtype=structured array
+        Effectively an edgelist encoding a parent/child pair, along with a
+        value and the corresponding cluster_size in each row providing a tree
+        structure. Expected fields: 'child', 'parent', 'value'
+    clusters : set
+        The set of nodes corresponding to identified clusters. These node
+        values should be the same as those present in `condensed_tree`.
+    cluster_label_map : dict
+        A mapping from the node values present in `clusters` to the labels
+        which will be returned.
+    allow_single_cluster : int
+        Whether to allow single cluster labeling
+    cluster_selection_epsilon : float
+        Epsilon value for cluster selection threshold
+        
+    Returns
+    -------
+    labels : ndarray of shape (n_samples,)
+        The cluster labels for each point in the data set;
+        a label of -1 denotes a noise assignment.
+    """
+    NOISE = -1
+    
+    # Extract arrays from structured array
+    child_array = condensed_tree['child']
+    parent_array = condensed_tree['parent'] 
+    lambda_array = condensed_tree['value']
+    
+    # Find root cluster (minimum parent value)
+    root_cluster = np.min(parent_array)
+    
+    # Initialize result array
+    result = np.empty(root_cluster, dtype=np.intp)
+    
+    # Initialize UnionFind structure
+    union_find = UnionFind(np.max(parent_array) + 1)
+    
+    # Build union-find structure by connecting non-cluster nodes
+    for n in range(len(condensed_tree)):
+        child = child_array[n]
+        parent = parent_array[n]
+        if child not in clusters:
+            union_find.union(parent, child)
+    
+    # Assign labels to each point
+    for n in range(root_cluster):
+        cluster = union_find.fast_find(n)
+        label = NOISE
+        
+        if cluster != root_cluster:
+            # Point belongs to a selected cluster
+            label = cluster_label_map[cluster]
+        elif len(clusters) == 1 and allow_single_cluster:
+            # Special case for single cluster datasets
+            # Find the lambda value for this child
+            parent_lambda_mask = child_array == n
+            if np.any(parent_lambda_mask):
+                parent_lambda = lambda_array[parent_lambda_mask][0]
+                
+                if cluster_selection_epsilon != 0.0:
+                    threshold = 1.0 / cluster_selection_epsilon
+                else:
+                    # Calculate threshold based on maximum lambda of siblings
+                    threshold = lambda_array[parent_array == cluster].max()
+                
+                if parent_lambda >= threshold:
+                    label = cluster_label_map[cluster]
+        
+        result[n] = label
+    
+    return result
+
 def make_single_linkage(mst):
     """Construct a single-linkage tree from an MST.
     
@@ -630,9 +713,10 @@ def _get_clusters(
 
     clusters = set([c for c in is_cluster if is_cluster[c]])
     cluster_map = {c: n for n, c in enumerate(sorted(list(clusters)))}
+    print(cluster_map)
     reverse_cluster_map = {n: c for c, n in cluster_map.items()}
 
-    labels = _do_labelling(
+    labels = do_labelling(
         condensed_tree,
         clusters,
         cluster_map,
