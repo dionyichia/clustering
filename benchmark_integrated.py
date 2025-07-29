@@ -28,7 +28,11 @@ class GPUHDBSCANWrapper:
         distance_metric: int = 2,
         cluster_method: int = 1, # 1 is EOM, 2 is Leaf
         minkowski_p: float = 2.0,
-        quiet_mode: bool = True
+        quiet_mode: bool = True,
+        w_FREQ: float = 0.255971,
+        w_PW: float = 0.012154,
+        w_AZ: float = 0.365937,
+        w_EL: float = 0.365937
     ) -> np.ndarray:
         """
         Run GPU HDBSCAN directly on a pre-batched CSV file.
@@ -57,8 +61,12 @@ class GPUHDBSCANWrapper:
             "--distMetric",      str(distance_metric),
             "--minclustersize",  str(min_cluster_size),
             "--clusterMethod",   str(cluster_method),
+            "--freqWeight",      str(w_FREQ),
+            "--pwWeight",        str(w_PW),
+            "--azWeight",        str(w_AZ),
+            "--elWeight",        str(w_EL),
             "--skip-toa",
-            "--skip-amp"
+            "--skip-amp",
         ]
         if quiet_mode:
             cmd.append("--quiet")

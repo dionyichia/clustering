@@ -16,58 +16,8 @@
 #include "single_linkage/single_linkage.hpp"
 #include <iomanip>
 #include <fstream>
-// QUIET MODE to silence debug statements
-bool quiet_mode = false;
-
-// Replace all std::cout statements with conditional output:
-#define DEBUG_PRINT(x) if (!quiet_mode) { std::cout << x; }
-
-// void writeMRDGraph(const std::string& filename,
-//                    const std::vector<std::vector<std::pair<int, double>>>& knn_graph) {
-//     std::ofstream out(filename);
-//     if (!out.is_open()) {
-//         std::cerr << "Failed to open file " << filename << " for writing\n";
-//         return;
-//     }
-
-//     for (int i = 0; i < knn_graph.size(); ++i) {
-//         out << i;  // query point index
-//         for (const auto& [nbr_idx, dist] : knn_graph[i]) {
-//             out << "," << nbr_idx << "," << dist;
-//         }
-//         out << "\n";
-//     }
-//     out.close();
-// }
-
-void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int total_points) {
-    // Create label array initialized to -1 (noise)
-    std::vector<int> labels(total_points, -1);
-    
-    // Assign cluster labels
-    for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id) {
-        for (int point_id : clusters[cluster_id]) {
-            if (point_id >= 0 && point_id < total_points) {
-                labels[point_id] = cluster_id;
-            }
-        }
-    }
-    
-    // ALWAYS output cluster labels (needed for Python parsing)
-    std::cout << "CLUSTER_LABELS:";
-    for (int i = 0; i < labels.size(); ++i) {
-        std::cout << " " << labels[i];
-    }
-    std::cout << std::endl;
-    
-    // Output cluster statistics (conditional)
-    DEBUG_PRINT("CLUSTER_STATS:" << std::endl);
-    DEBUG_PRINT("  Total points: " << total_points << std::endl);
-    DEBUG_PRINT("  Number of clusters: " << clusters.size() << std::endl);
-    int noise_count = std::count(labels.begin(), labels.end(), -1);
-    DEBUG_PRINT("  Noise points: " << noise_count << std::endl);
-    DEBUG_PRINT("  Clustered points: " << (total_points - noise_count) << std::endl);
-}
+#include <iostream>
+#include <filesystem>
 
 int main(int argc, char** argv) {
   std::vector<int> ground_truth_labels;
@@ -83,6 +33,11 @@ int main(int argc, char** argv) {
   clusterMethod clusterMethod;
   int clusterMethodChoice = NULL;
   float minkowskiP = NULL;
+  // ADD HACKS FOR WEIGHT 
+  float freqWeight;
+  float pwWeight;
+  float azWeight;
+  float elWeight;
   DistanceMetric metric;
   /* Param Overrides 
     --dimensions <int>      Number of feature dimensions to use
@@ -98,6 +53,10 @@ int main(int argc, char** argv) {
     --noBenchMark           Controls Which readPointsFromFile function is used
     --quiet, -q             Suppress debug output
     --help, -h              Show this help message
+    --freqWeight            Weightage for Frequency Component in Distance Calculation
+    --pwWeight              Weightage for Pulse Width Component in Distance Calculation 
+    --azWeight              Weightage for Azimuth Component in Distance Calculation
+    --elWeight              Weightage for Elevation Component in Distance Calculation
   */
   int i = 1;
   while (i < argc) { 
@@ -285,6 +244,66 @@ int main(int argc, char** argv) {
         noNorm = 1;
         i += 1;
       }
+      else if (!strcmp(argv[i], "--freqWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              freqWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Frequency Component: " << freqWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
+      else if (!strcmp(argv[i], "--pwWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              pwWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Pulse Width Component: " << pwWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
+      else if (!strcmp(argv[i], "--azWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              azWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Azimuth Component: " << azWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
+      else if (!strcmp(argv[i], "--elWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              elWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Elevation Component: " << elWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
         else {
           // unrecognized flag: skip just the flag
           std::cerr << "Warning: unknown option '" << argv[i] << "\n";
@@ -344,7 +363,13 @@ int main(int argc, char** argv) {
   // based on stds of jitter added for ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
   //   std::vector<double> stds = {1.0, 0.21, 0.2, 0.2};
   //   std::vector<double> weights = computeNormalizedStdRangeWeights(points, stds);
-  std::vector<double> weights = {0.363949,0.017281,0.098467,0.520303}
+  if (freqWeight & pwWeight & azWeight & elWeight){
+    std::cout<<"Weights Provided"<<std::endl;
+    std::vector<double> weights = {freqWeight,pwWeight,azWeight,elWeight};
+  }
+  else{
+    std::vector<double> weights = {0.363949,0.017281,0.365937,0.365937};
+  }
   min_cluster_size = max(20,min_cluster_size);
   int N = points.size();
   std::vector<std::vector<std::pair<int,double>>> knn_graph(points.size());
@@ -458,7 +483,7 @@ int main(int argc, char** argv) {
             mst_edge_count++;
         }
     }
-
+    writeMSTEdges("mst_edges.csv", mst_edges);
     DEBUG_PRINT( "Total MST edges: " << mst_edge_count << "\n");
     DEBUG_PRINT( "Expected MST edges: " << n_vertices - 1 << "\n");
 
