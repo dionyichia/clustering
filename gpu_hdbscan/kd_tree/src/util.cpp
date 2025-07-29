@@ -220,6 +220,10 @@ void printUsage(char* prog) {
     std::cerr << "  --noBenchMark           Controls Which readPointsFromFile function is used";
     std::cerr << "  --quiet, -q             Suppress debug output\n";
     std::cerr << "  --help, -h              Show this help message\n";
+    std::cerr << "  --freqWeight            Weightage for Frequency Component in Distance Calculation\n";
+    std::cerr << "  --pwWeight              Weightage for Pulse Width Component in Distance Calculation\n";
+    std::cerr << "  --azWeight              Weightage for Azimuth Component in Distance Calculation\n";
+    std::cerr << "  --elWeight              Weightage for Elevation Component in Distance Calculation\n";
 }
 
 // // Compute normalized inverse standard deviation weights

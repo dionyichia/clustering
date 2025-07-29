@@ -33,6 +33,11 @@ int main(int argc, char** argv) {
   clusterMethod clusterMethod;
   int clusterMethodChoice = NULL;
   float minkowskiP = NULL;
+  // ADD HACKS FOR WEIGHT 
+  float freqWeight;
+  float pwWeight;
+  float azWeight;
+  float elWeight;
   DistanceMetric metric;
   /* Param Overrides 
     --dimensions <int>      Number of feature dimensions to use
@@ -48,6 +53,10 @@ int main(int argc, char** argv) {
     --noBenchMark           Controls Which readPointsFromFile function is used
     --quiet, -q             Suppress debug output
     --help, -h              Show this help message
+    --freqWeight            Weightage for Frequency Component in Distance Calculation
+    --pwWeight              Weightage for Pulse Width Component in Distance Calculation 
+    --azWeight              Weightage for Azimuth Component in Distance Calculation
+    --elWeight              Weightage for Elevation Component in Distance Calculation
   */
   int i = 1;
   while (i < argc) { 
@@ -235,6 +244,66 @@ int main(int argc, char** argv) {
         noNorm = 1;
         i += 1;
       }
+      else if (!strcmp(argv[i], "--freqWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              freqWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Frequency Component: " << freqWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
+      else if (!strcmp(argv[i], "--pwWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              pwWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Pulse Width Component: " << pwWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
+      else if (!strcmp(argv[i], "--azWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              azWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Azimuth Component: " << azWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
+      else if (!strcmp(argv[i], "--elWeight")){
+        if (i + 1 >= argc) {
+            std::cerr << "Error: insufficient args provided\n";
+            return 1;
+        }
+          try{
+              elWeight = std::stof(argv[i+1]);
+              DEBUG_PRINT( "Weight for Elevation Component: " << elWeight << "\n");
+              i += 2;
+          } catch(const std::exception& e) {
+              std::cerr << e.what() << "\n";
+              printUsage(argv[0]);
+              return 1;
+          }
+      }
         else {
           // unrecognized flag: skip just the flag
           std::cerr << "Warning: unknown option '" << argv[i] << "\n";
@@ -294,7 +363,13 @@ int main(int argc, char** argv) {
   // based on stds of jitter added for ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
   //   std::vector<double> stds = {1.0, 0.21, 0.2, 0.2};
   //   std::vector<double> weights = computeNormalizedStdRangeWeights(points, stds);
-  std::vector<double> weights = {0.363949,0.017281,0.098467,0.520303}
+  if (freqWeight & pwWeight & azWeight & elWeight){
+    std::cout<<"Weights Provided"<<std::endl;
+    std::vector<double> weights = {freqWeight,pwWeight,azWeight,elWeight};
+  }
+  else{
+    std::vector<double> weights = {0.363949,0.017281,0.365937,0.365937};
+  }
   min_cluster_size = max(20,min_cluster_size);
   int N = points.size();
   std::vector<std::vector<std::pair<int,double>>> knn_graph(points.size());
