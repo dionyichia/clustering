@@ -119,6 +119,6 @@ ClusterMetrics evaluateClustering(const std::vector<int>& true_labels,
 /**
  * Print clustering evaluation results
  */
-void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode = false);
+void printClusteringEvaluation(const ClusterMetrics& metrics, bool quiet_mode);
 
 #endif // SINGLE_LINKAGE_HPP

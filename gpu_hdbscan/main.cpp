@@ -16,58 +16,8 @@
 #include "single_linkage/single_linkage.hpp"
 #include <iomanip>
 #include <fstream>
-// QUIET MODE to silence debug statements
-bool quiet_mode = false;
-
-// Replace all std::cout statements with conditional output:
-#define DEBUG_PRINT(x) if (!quiet_mode) { std::cout << x; }
-
-// void writeMRDGraph(const std::string& filename,
-//                    const std::vector<std::vector<std::pair<int, double>>>& knn_graph) {
-//     std::ofstream out(filename);
-//     if (!out.is_open()) {
-//         std::cerr << "Failed to open file " << filename << " for writing\n";
-//         return;
-//     }
-
-//     for (int i = 0; i < knn_graph.size(); ++i) {
-//         out << i;  // query point index
-//         for (const auto& [nbr_idx, dist] : knn_graph[i]) {
-//             out << "," << nbr_idx << "," << dist;
-//         }
-//         out << "\n";
-//     }
-//     out.close();
-// }
-
-void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int total_points) {
-    // Create label array initialized to -1 (noise)
-    std::vector<int> labels(total_points, -1);
-    
-    // Assign cluster labels
-    for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id) {
-        for (int point_id : clusters[cluster_id]) {
-            if (point_id >= 0 && point_id < total_points) {
-                labels[point_id] = cluster_id;
-            }
-        }
-    }
-    
-    // ALWAYS output cluster labels (needed for Python parsing)
-    std::cout << "CLUSTER_LABELS:";
-    for (int i = 0; i < labels.size(); ++i) {
-        std::cout << " " << labels[i];
-    }
-    std::cout << std::endl;
-    
-    // Output cluster statistics (conditional)
-    DEBUG_PRINT("CLUSTER_STATS:" << std::endl);
-    DEBUG_PRINT("  Total points: " << total_points << std::endl);
-    DEBUG_PRINT("  Number of clusters: " << clusters.size() << std::endl);
-    int noise_count = std::count(labels.begin(), labels.end(), -1);
-    DEBUG_PRINT("  Noise points: " << noise_count << std::endl);
-    DEBUG_PRINT("  Clustered points: " << (total_points - noise_count) << std::endl);
-}
+#include <iostream>
+#include <filesystem>
 
 int main(int argc, char** argv) {
   std::vector<int> ground_truth_labels;
@@ -458,7 +408,7 @@ int main(int argc, char** argv) {
             mst_edge_count++;
         }
     }
-
+    writeMSTEdges("mst_edges.csv", mst_edges);
     DEBUG_PRINT( "Total MST edges: " << mst_edge_count << "\n");
     DEBUG_PRINT( "Expected MST edges: " << n_vertices - 1 << "\n");
 

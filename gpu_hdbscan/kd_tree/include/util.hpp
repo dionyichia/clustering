@@ -3,6 +3,13 @@
 #include <string>
 #include <vector>
 #include <set>
+
+// QUIET MODE to silence debug statements
+inline bool quiet_mode = false;
+
+// Replace all std::cout statements with conditional output:
+#define DEBUG_PRINT(x) if (!quiet_mode) { std::cout << x; }
+
 /// Normalize each dimension of pts to [0,1]
 void normalizePoints(std::vector<Point>& pts);
 
@@ -27,3 +34,9 @@ std::vector<double> computeNormalizedStdRangeWeights(
     const std::vector<Point>& points,
     const std::vector<double>& stds
 );
+
+void outputClusterLabels(const std::vector<std::vector<int>>& clusters, int total_points);
+void writeMSTEdges(const std::string& filename,
+                   const std::vector<Edge>& mst_edges);
+void writeMRDGraph(const std::string& filename,
+                   const std::vector<std::vector<std::pair<int, double>>>& knn_graph);
