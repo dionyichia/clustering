@@ -833,7 +833,7 @@ def run_benchmark_with_visualization_batched(
                 gpu_labels, gpu_time, gpu_mem, gpu_timeout = track_performance_with_timeout(
                     gpu_hdbscan.fit_predict_batched, 
                     csv_file,
-                    dims,``
+                    dims,
                     min_samples=min_samples,
                     min_cluster_size=min_cluster_size,
                     quiet_mode=quiet_mode,
@@ -1258,7 +1258,7 @@ if __name__ == "__main__":
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)", "Latitude(deg)", "Longitude(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
         else:
-            std_array = [1.0, 0.00021, 0.2, 0.2] 
+            std_array = [1.0, 0.21, 0.2, 0.2] 
             columns_to_noise = ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
             std_map = dict(zip(columns_to_noise, std_array))
         
