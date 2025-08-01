@@ -34,10 +34,10 @@ int main(int argc, char** argv) {
   int clusterMethodChoice = NULL;
   float minkowskiP = NULL;
   // ADD HACKS FOR WEIGHT 
-  float freqWeight;
-  float pwWeight;
-  float azWeight;
-  float elWeight;
+  float freqWeight = NULL;
+  float pwWeight = NULL;
+  float azWeight = NULL;
+  float elWeight = NULL;
   DistanceMetric metric;
   /* Param Overrides 
     --dimensions <int>      Number of feature dimensions to use
@@ -363,12 +363,10 @@ int main(int argc, char** argv) {
   // based on stds of jitter added for ["FREQ(MHz)", "PW(microsec)", "AZ_S0(deg)", "EL_S0(deg)"]
   //   std::vector<double> stds = {1.0, 0.21, 0.2, 0.2};
   //   std::vector<double> weights = computeNormalizedStdRangeWeights(points, stds);
-  if (freqWeight & pwWeight & azWeight & elWeight){
+  std::vector<double> weights;
+  if (freqWeight != NULL & pwWeight != NULL & azWeight != NULL & elWeight != NULL){
     std::cout<<"Weights Provided"<<std::endl;
-    std::vector<double> weights = {freqWeight,pwWeight,azWeight,elWeight};
-  }
-  else{
-    std::vector<double> weights = {0.363949,0.017281,0.365937,0.365937};
+    weights = {freqWeight,pwWeight,azWeight,elWeight};
   }
   min_cluster_size = max(20,min_cluster_size);
   int N = points.size();
@@ -382,8 +380,12 @@ int main(int argc, char** argv) {
       std::priority_queue<std::pair<double,int>> heap;
 
       // 2) Query the tree for point i
-      
-      queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP,&weights);
+      if (weights.size() != 0){
+        queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP,&weights);
+      }
+      else{
+        queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP);
+      }
       if (heap.size() != minPts) {
             std::cerr << "ERROR: Heap size is " << heap.size() 
                     << " but expected " << minPts << " for point " << i << std::endl;
@@ -413,6 +415,7 @@ int main(int argc, char** argv) {
       std::reverse(nbrs.begin(), nbrs.end());
       knn_graph[i] = std::move(nbrs);
   }
+  delete(root);
 
   if (!quiet_mode) {
         printAndVerifyCoreDists(points, core_dist, minPts, metric, minkowskiP);
