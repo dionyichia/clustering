@@ -253,16 +253,14 @@ def add_gaussian_noise(data_path, std_map):
     Add Gaussian noise to specific columns in a dataset.
 
     Parameters:
-    - data: numpy array or pandas DataFrame
-    - snr_db: desired Signal-to-Noise Ratio in dB. If set, overrides std.
-    - std: standard deviation of the noise. Used only if snr_db is None.
+    - data_path: Path to the CSV file
+    - std_map: Dictionary mapping column names to noise std dev
 
     Returns:
     - noisy_data file path: data with added Gaussian noise
     """
 
     df = pd.read_csv(data_path)
-
     columns_to_noise = list(std_map.keys())
     print("Adding noise to columns: ", columns_to_noise)
 
@@ -271,9 +269,16 @@ def add_gaussian_noise(data_path, std_map):
     for col in columns_to_noise:
         if col in df.columns:
             noise = np.random.normal(loc=0.0, scale=std_map[col], size=df[col].shape)
-            df_noisy[col] = df[col] + noise
+            noisy_values = df[col] + noise
+
+            # Guard for PW(microsec)
+            if col == 'PW(microsec)':
+                # Keep original if noisy value is negative
+                df_noisy[col] = np.where(noisy_values < 0, df[col], noisy_values)
+            else:
+                df_noisy[col] = noisy_values
         else:
-            raise ValueError (f"Column {col} not found in CSV.")
+            raise ValueError(f"Column {col} not found in CSV.")
 
     # Construct output file path
     output_dir = "data"
@@ -283,7 +288,6 @@ def add_gaussian_noise(data_path, std_map):
     name, ext = os.path.splitext(base)
     output_path = os.path.join(output_dir, f"noisy_{name}{ext}")
 
-    # Save data
     df_noisy.to_csv(output_path, index=False)
 
     return output_path
