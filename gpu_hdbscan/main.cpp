@@ -1,5 +1,5 @@
 #include <hip/hip_runtime.h>
-#include <cstring>   // for strcmp
+#include <cstring> 
 #include <iostream>
 #include <vector>
 #include <algorithm>
@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     --skip-toa              Skip TOA column (index 0)
     --skip-amp              Skip Amplitude column (index 3)
     --skip-columns <list>   Skip specific columns (comma-separated indices)
-    --noBenchMark           Controls Which readPointsFromFile function is used
+    --noBenchMark           Add Flag if running function alone and not through benchmark_integrated.py
     --quiet, -q             Suppress debug output
     --help, -h              Show this help message
     --freqWeight            Weightage for Frequency Component in Distance Calculation
@@ -376,10 +376,10 @@ int main(int argc, char** argv) {
   auto root = buildKDTree(points);
 
   for (int i = 0; i < N; ++i) {
-      // 1) Prepare an empty max-heap
+      // Prepare an empty max-heap
       std::priority_queue<std::pair<double,int>> heap;
 
-      // 2) Query the tree for point i
+      // Query the tree for point i
       if (weights.size() != 0){
         queryKNN(root.get(), points[i], i, minPts, heap, points,metric,minkowskiP,&weights);
       }
@@ -390,9 +390,9 @@ int main(int argc, char** argv) {
             std::cerr << "ERROR: Heap size is " << heap.size() 
                     << " but expected " << minPts << " for point " << i << std::endl;
         }
-      // 3) Extract neighbors (and record the core distance)
+      // Extract neighbors (and record the core distance)
       double d_k = 0;
-      // 1) Record core‐distance before you empty the heap
+      // Record core‐distance before you empty the heap
       double coreDist = heap.top().first;
       if(metric == DistanceMetric::EuclideanSquared || metric == DistanceMetric::DSO){
           core_dist[i] = std::sqrt(coreDist);
@@ -411,7 +411,6 @@ int main(int argc, char** argv) {
           nbrs.emplace_back(idx, d_sq);
       }
       }
-      // reverse to have them in ascending order if you like
       std::reverse(nbrs.begin(), nbrs.end());
       knn_graph[i] = std::move(nbrs);
   }
@@ -425,10 +424,8 @@ int main(int argc, char** argv) {
   if (!quiet_mode) {
         printAndVerifyMutualReachability(points, core_dist, knn_graph, metric, minkowskiP);
     }
-//   writeMRDGraph("mrd_graph_output.csv", knn_graph);
-  // After you've built your knn_graph and converted to mutual reachability
+  //   writeMRDGraph("mrd_graph_output.csv", knn_graph);
   std::vector<Edge> all_edges = flatten(knn_graph);
-  // Now you can sort by weight if needed
   constexpr size_t GPU_SORT_THRESHOLD = 1'000'000;
   std::cout << "[DEBUG] Before sort, first few weights:";
   for (size_t i = 0; i < std::min<size_t>(5, all_edges.size()); ++i)

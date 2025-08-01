@@ -1,5 +1,5 @@
 #include "single_linkage.hpp"
-#include "kd_tree/include/types.hpp"  // Include for Edge definition
+#include "kd_tree/include/types.hpp" 
 #include <algorithm>
 #include <limits>
 #include <cassert>
@@ -235,7 +235,7 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
         return 0.0f;
     }
     
-    // Step 1: Collect all unique lambda values and sort them (bottom-up)
+    // Collect all unique lambda values and sort them (bottom-up)
     std::set<float> lambda_set;
     for (const auto& node : condensed_tree) {
         if (node.cluster_size != 1) {
@@ -251,7 +251,7 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
         return lambda_values[lambda_values.size() / 2];
     }
     
-    // Step 2: Calculate cluster metrics at each lambda level
+    // Calculate cluster metrics at each lambda level
     std::vector<float> cluster_counts;
     
     for (float lambda : lambda_values) {
@@ -274,7 +274,7 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
         //           << ", Cumulative stability: " << total_stability << "\n";
     }
     
-    // Step 3: Calculate rate of change (first derivative)
+    // Calculate rate of change (first derivative)
     std::vector<float> rate_of_change;
     for (size_t i = 1; i < cluster_counts.size(); ++i) {
         float delta_clusters = cluster_counts[i] - cluster_counts[i-1];
@@ -287,7 +287,7 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
         }
     }
     
-    // Step 4: Find elbow point using second derivative
+    // Find elbow point using second derivative
     std::vector<float> second_derivative;
     for (size_t i = 1; i < rate_of_change.size(); ++i) {
         float delta_rate = rate_of_change[i] - rate_of_change[i-1];
@@ -300,7 +300,7 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
         }
     }
     
-    // Step 5: Find first stabilization point (first elbow from bottom-up)
+    // Find first stabilization point (first elbow from bottom-up)
     // Look for the first point where the second derivative approaches zero
     // after initial rapid change, indicating stabilization of small clusters
     
@@ -315,44 +315,18 @@ float calculate_cluster_selection_epsilon(const std::vector<CondensedNode>& cond
                   << ", Lambda: " << lambda_values[i+2]
                   << ", 2nd derivative: " << second_derivative[i] << "\n";
         
-        // First, detect if we've seen significant change
         if (!found_initial_change && abs_second_deriv > min_second_deriv_threshold) {
             found_initial_change = true;
             continue;
         }
-        
-        // Then look for stabilization after initial change
+
         if (found_initial_change && abs_second_deriv < min_second_deriv_threshold) {
             epsilon = lambda_values[i+2]; // +2 because second derivative is offset by 2
             std::cout << "[INFO] Elbow point detected at lambda: " << epsilon << "\n";
             break;
         }
     }
-    
-    // Alternative approach: If no clear elbow, use cluster count stabilization
-    // if (epsilon == lambda_values[0] && lambda_values.size() > 5) {
-    //     std::cout << "[INFO] No clear elbow found, using cluster count stabilization\n";
         
-    //     // Find where cluster count stops changing rapidly
-    //     for (size_t i = 2; i < cluster_counts.size() - 1; ++i) {
-    //         float prev_change = std::abs(cluster_counts[i] - cluster_counts[i-1]);
-    //         float next_change = std::abs(cluster_counts[i+1] - cluster_counts[i]);
-            
-    //         // If change is small and consistent, we've found stabilization
-    //         if (prev_change <= 1.0f && next_change <= 1.0f) {
-    //             epsilon = lambda_values[i];
-    //             std::cout << "[INFO] Cluster stabilization point at lambda: " << epsilon << "\n";
-    //             break;
-    //         }
-    //     }
-    // }
-    
-    // // Final fallback: use median if still no good epsilon found
-    // if (epsilon == lambda_values[0]) {
-    //     epsilon = lambda_values[lambda_values.size() / 3]; // Use lower third instead of median
-    //     std::cout << "[INFO] Using fallback epsilon (lower third): " << epsilon << "\n";
-    // }
-    
     std::cout << "[RESULT] Selected cluster_selection_epsilon: " << epsilon << "\n";
     return epsilon;
 }
@@ -611,7 +585,7 @@ std::set<int> leaf_selection(const std::vector<CondensedNode>& condensed_tree,
                            double cluster_selection_epsilon,
                            bool allow_single_cluster) {
     
-    // Step 1: Get leaf nodes from cluster tree
+    // Get leaf nodes from cluster tree
     // Leaf Nodes are nodes that aren't parents, so formed from merge of two invalid clusters
     // Can be >= min_cluster_size
     std::set<int> leaves = get_cluster_tree_leaves(condensed_tree);
@@ -622,14 +596,14 @@ std::set<int> leaf_selection(const std::vector<CondensedNode>& condensed_tree,
     }
     std::cout << std::endl;
     
-    // Step 2: Handle case when no leaves found
+    // Handle case when no leaves found
     std::set<int> selected_clusters;
     if (leaves.empty()) {
         std::cout << "No leaves found, selecting root cluster" << std::endl;
         int root_cluster = find_min_parent(condensed_tree);
         selected_clusters.insert(root_cluster);
     } else {
-        // Step 3: Apply epsilon search if specified
+        // Apply epsilon search if specified
         // Epsilon Search reduces fragmentation
         // By setting a non-zero cluster_selection_epsilon, 
         // clusters which are spawned at an epsilon < cluster_selection_epsilon are merged
