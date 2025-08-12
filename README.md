@@ -36,6 +36,31 @@ Our custom GPU-accelerated implementation of the HDBSCAN clustering algorithm, o
 - **`main.cpp`**: Main driver program that coordinates all components
 - **`Makefile`**: Build system that compiles all C++ files across directories and produces the `gpu_hdbscan` executable in the `build/` directory
 
+### sk_learn_hdbscan(`sk_learn_hdbscan/`)
+
+Our attempt at converting the Cython code of scikit-learn into Python Code for us to debug at each juncture, the output of the HDBSCAN algorithm with ours, for more comprehensive analysis.
+
+- **`utils/`**: Contains _param_validation.py which validates the data types used in the other python scripts within folder
+- **`sk_hdbscan.py`**:
+- **`recreation.py`**:
+
+### Utilities (`utils/`)
+
+#### `eval.py`
+Evaluation framework providing:
+- Clustering quality metrics
+- Performance measurement tools
+- Statistical analysis functions
+- Comparative evaluation between different algorithms
+
+#### `plot.py`
+Visualization toolkit for:
+- Performance comparison charts
+- Clustering result visualizations
+- Parameter sensitivity analysis plots
+- Comprehensive reporting graphics
+
+
 ### Benchmarking and Evaluation
 
 #### `benchmark_integrated.py`
@@ -55,22 +80,10 @@ Parameter optimization utility for DBSCAN that determines optimal values for:
 - `eps` (epsilon): Maximum distance between two samples for them to be considered neighbors
 - `min_samples`: Minimum number of samples in a neighborhood for a point to be considered a core point
 
-### Utilities (`utils/`)
+### Data Analysis and Visualisation
 
-#### `eval.py`
-Evaluation framework providing:
-- Clustering quality metrics
-- Performance measurement tools
-- Statistical analysis functions
-- Comparative evaluation between different algorithms
-
-#### `plot.py`
-Visualization toolkit for:
-- Performance comparison charts
-- Clustering result visualizations
-- Parameter sensitivity analysis plots
-- Comprehensive reporting graphics
-
+#### `eda.ipynb`
+The jupyter notebook which contains code we used to visualise the simulated data
 ## Building and Running
 
 ### Prerequisites
