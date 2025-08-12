@@ -74,9 +74,9 @@ Visualization toolkit for:
 ## Building and Running
 
 ### Prerequisites
-- C++ compiler with GPU support (CUDA-capable)
+- C++ compiler with GPU support (HIP-capable)
 - Python 3.x
-- Required Python packages: scikit-learn, numpy, pandas, matplotlib
+- Required Python packages: scikit-learn, numpy, pandas, matplotlib as stated in requirements.txt
 - CUDA toolkit (for GPU acceleration)
 
 ### Building GPU HDBSCAN
@@ -118,20 +118,3 @@ The benchmarking suite generates:
 - Visual plots showing algorithm comparisons
 - Statistical analysis of clustering quality
 - Execution time and memory usage metrics
-
-## Contributing
-
-This research project welcomes contributions in areas such as:
-- Algorithm optimizations
-- Additional clustering methods
-- Enhanced visualization tools
-- Performance improvements
-- Documentation enhancements
-
-## License
-
-[Add your license information here]
-
-## Citation
-
-[Add citation information if this is academic research]
