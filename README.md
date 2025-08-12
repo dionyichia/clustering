@@ -41,8 +41,8 @@ Our custom GPU-accelerated implementation of the HDBSCAN clustering algorithm, o
 Our attempt at converting the Cython code of scikit-learn into Python Code for us to debug at each juncture, the output of the HDBSCAN algorithm with ours, for more comprehensive analysis.
 
 - **`utils/`**: Contains _param_validation.py which validates the data types used in the other python scripts within folder
-- **`sk_hdbscan.py`**:
-- **`recreation.py`**:
+- **`sk_hdbscan.py`**: Overall wrapper which provides access to HDBSCAN function
+- **`recreation.py`**: Implementation of functions used by HDBSCAN
 
 ### Utilities (`utils/`)
 
